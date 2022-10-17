@@ -185,6 +185,40 @@ minirl_clear_screen(minirl_st * const minirl)
     }
 }
 
+static void
+calculate_row_col(
+	size_t const terminal_width,
+	size_t const prompt_len,
+	char const * const line,
+	size_t const max_chars,
+	struct row_col_st * const row_col_out)
+{
+	/* Assume no newlines in the prompt. */
+	struct row_col_st row_col = {
+		.row = prompt_len / terminal_width,
+		.col = prompt_len % terminal_width
+	};
+	char const *pch = line;
+	size_t char_count = 0;
+
+	while (*pch != '\0' && char_count < max_chars) {
+		if (*pch == '\n') {
+			row_col.row++;
+			row_col.col = 0;
+		} else {
+			row_col.col++;
+			if (row_col.col == terminal_width) {
+				row_col.row++;
+				row_col.col = 0;
+			}
+		}
+		char_count++;
+		pch++;
+	}
+	*row_col_out = row_col;
+};
+
+
 /* Multi line low level line refresh.
  *
  * Rewrite the currently edited line accordingly to the buffer content,
@@ -195,9 +229,144 @@ refresh_line_clear_rows(minirl_st * const minirl, bool const row_clear_required)
     bool success = true;
     struct minirl_state * const l = &minirl->state;
     size_t const old_cols = l->cols;
-    l->cols = minirl_terminal_width(minirl);
-    char seq[64];
+    //l->cols = minirl_terminal_width(minirl);
+
     int plen = strlen(l->prompt);
+    /* Calculate row and column of end of line. */
+    struct row_col_st row_col_end;
+    calculate_row_col(l->cols, plen, l->line_buf->b, l->len, &row_col_end);
+
+    /* Calculate row and column of end of cursor. */
+    struct row_col_st row_col_cursor;
+    calculate_row_col(l->cols, plen, l->line_buf->b, l->pos, &row_col_cursor);
+
+    fprintf(stderr, "row col end %d %d\n", row_col_end.row, row_col_end.col);
+    fprintf(stderr, "row col cursor %d %d\n", row_col_cursor.row, row_col_cursor.col);
+
+    char seq[64];
+    int old_rows = l->maxrows;
+    int const fd = minirl->out.fd;
+    struct buffer ab;
+
+    /* Update maxrows if needed. */
+    if (row_col_end.row > (int)l->maxrows)
+    {
+        l->maxrows = row_col_end.row;
+    }
+
+    buffer_init(&ab, 20);
+    /*
+     * First step: clear all the lines used before.
+     * To do so start by going to the last row.
+     * This isn't necessary if there have been some completions printed just
+     * before this function is called, because the cursor will already be at
+     * the start of a line. In that case, row_clear_required will be false.
+     *
+     * A full update is also required if the terminal width has changed.
+     */
+    bool const clear_rows = (old_cols != l->cols) || row_clear_required;
+    if (clear_rows)
+    {
+	if (old_rows - row_col_cursor.row > 0)
+        {
+		fprintf(stderr, "must go down %d\n", old_rows - row_col_cursor.row);
+            buffer_snprintf(&ab, seq, sizeof seq, "\x1b[%dB", old_rows - row_col_cursor.row);
+        }
+
+        /* Now for every row clear it, go up. */
+	fprintf(stderr, "must go up %d\n", old_rows - 1);
+        for (int j = 0; j < old_rows - 1; j++)
+        {
+            buffer_append(&ab, "\r\x1b[0K\x1b[1A", strlen("\r\x1b[0K\x1b[1A"));
+        }
+
+        /* Clean the top line. */
+        buffer_append(&ab, "\r\x1b[0K", strlen("\r\x1b[0K"));
+    }
+
+    /* Write the prompt and the current buffer content */
+    buffer_append(&ab, l->prompt, strlen(l->prompt));
+    if (minirl->options.mask_mode)
+    {
+        for (size_t i = 0; i < l->len; i++)
+        {
+            buffer_append(&ab, "*", 1);
+        }
+    }
+    else
+    {
+        buffer_append(&ab, l->line_buf->b, l->len);
+    }
+
+    /*
+     * If we are at the very end of the screen with our cursor, we need to
+     * emit a newline and move the cursor to the first column.
+     */
+    if (l->pos && l->pos == l->len && ((l->pos + plen) % l->cols) == 0)
+    {
+	fprintf(stderr, "must move to next line\n");
+        buffer_append(&ab, "\r\n", strlen("\r\n"));
+	row_col_end.row++;
+	row_col_cursor.row++;
+        if (row_col_end.row > (int)l->maxrows)
+        {
+            l->maxrows = row_col_end.row;
+        }
+    }
+
+    /* Move cursor to right position. */
+
+    /* Go up till we reach the expected positon. */
+    if (row_col_end.row - row_col_cursor.row > 0)
+    {
+        buffer_snprintf(&ab, seq, sizeof seq, "\x1b[%dA", row_col_end.row - row_col_cursor.row);
+    }
+
+    /* Set column. */
+    if (row_col_cursor.col != 0)
+    {
+        buffer_snprintf(&ab, seq, sizeof seq, "\r\x1b[%dC", row_col_cursor.col);
+    }
+    else
+    {
+        buffer_append(&ab, "\r", strlen("\r"));
+    }
+
+    l->oldpos = l->pos;
+    l->previous_cursor = row_col_cursor;
+    l->previous_line_end = row_col_end;
+
+    if (io_write(fd, ab.b, ab.len) == -1)
+    {
+        success = false;
+    }
+    buffer_clear(&ab);
+
+    return success;
+}
+
+/* Multi line low level line refresh.
+ *
+ * Rewrite the currently edited line accordingly to the buffer content,
+ * cursor position, and number of columns of the terminal. */
+static bool
+refresh_line_clear_rows_old(minirl_st * const minirl, bool const row_clear_required)
+{
+    bool success = true;
+    struct minirl_state * const l = &minirl->state;
+    size_t const old_cols = l->cols;
+    l->cols = minirl_terminal_width(minirl);
+
+    int plen = strlen(l->prompt);
+    struct row_col_st row_col_end;
+    struct row_col_st row_col_cursor;
+    calculate_row_col(l->cols, plen, l->line_buf->b, l->len, &row_col_end);
+    calculate_row_col(l->cols, plen, l->line_buf->b, l->pos, &row_col_cursor);
+
+    fprintf(stderr, "row col end %d %d\n", row_col_end.row, row_col_end.col);
+    fprintf(stderr, "row col cursor %d %d\n", row_col_cursor.row, row_col_cursor.col);
+
+    char seq[64];
     int rows = (plen + l->len + l->cols - 1) / l->cols; /* rows used by current buf. */
     int rpos = (plen + l->oldpos + l->cols) / l->cols; /* cursor relative row. */
     int rpos2; /* rpos after refresh. */
@@ -321,19 +490,6 @@ minirl_edit_insert(minirl_st * const minirl, uint32_t * const flags, char const 
         }
     }
 
-    bool require_full_refresh = true;
-
-    if (l->len == l->pos) /* Cursor is at the end of the line. */
-    {
-        size_t const old_rows = (l->prompt_len + l->len) / l->cols;
-        size_t const new_rows = (l->prompt_len + l->len + 1) / l->cols;
-
-        if (old_rows == new_rows)
-        {
-            require_full_refresh = false;
-        }
-    }
-
     /* Insert the new char into the line buffer. */
     if (l->len != l->pos)
     {
@@ -344,6 +500,19 @@ minirl_edit_insert(minirl_st * const minirl, uint32_t * const flags, char const 
     l->pos++;
     l->line_buf->b[l->len] = '\0';
 
+    bool require_full_refresh = true;
+
+    if (l->len == l->pos) { /* Cursor is at the end of the line. */
+	    row_col_st new_row_col;
+
+	    calculate_row_col(l->cols, l->prompt_len, l->line_buf->b, strlen(l->line_buf->b), &new_row_col);
+
+	    if (l->previous_line_end.row == new_row_col.row) {
+		    fprintf(stderr, "full refresh not required %d %d cols %zu\n", new_row_col.row, new_row_col.col, l->cols);
+		    require_full_refresh = false;
+	    }
+    }
+
     if (require_full_refresh)
     {
         *flags |= minirl_key_handler_refresh;
@@ -352,6 +521,13 @@ minirl_edit_insert(minirl_st * const minirl, uint32_t * const flags, char const 
     {
         /* Avoid a full update of the line in the trivial case. */
         char const d = minirl->options.mask_mode ? '*' : c;
+	row_col_st new_row_col;
+
+	calculate_row_col(l->cols, l->prompt_len, l->line_buf->b, strlen(l->line_buf->b), &new_row_col);
+	if (new_row_col.row > l->maxrows) {
+		fprintf(stderr, "updating maxrows to %d after trivial update\n", new_row_col.row);
+		l->maxrows = new_row_col.row;
+	}
 
         if (io_write(minirl->out.fd, &d, 1) == -1)
         {
@@ -979,6 +1155,8 @@ static int minirl_edit(
 
     /* Buffer starts empty. */
     l->line_buf->b[0] = '\0';
+    calculate_row_col(l->cols, l->prompt_len, l->line_buf->b, 0, &l->previous_cursor);
+    calculate_row_col(l->cols, l->prompt_len, l->line_buf->b, 0, &l->previous_line_end);
 
     /* The latest history entry is always our current buffer, that
      * initially is just an empty string. */
