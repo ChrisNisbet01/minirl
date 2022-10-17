@@ -267,14 +267,14 @@ refresh_line_clear_rows(minirl_st * const minirl, bool const row_clear_required)
     bool const clear_rows = (old_cols != l->cols) || row_clear_required;
     if (clear_rows)
     {
-	if (old_rows - row_col_cursor.row > 0)
+	if (old_rows - row_col_cursor.row - 1 > 0)
         {
 		fprintf(stderr, "must go down %d\n", old_rows - row_col_cursor.row);
-            buffer_snprintf(&ab, seq, sizeof seq, "\x1b[%dB", old_rows - row_col_cursor.row);
+            buffer_snprintf(&ab, seq, sizeof seq, "\x1b[%dB", old_rows - row_col_cursor.row - 1);
         }
 
         /* Now for every row clear it, go up. */
-	fprintf(stderr, "must go up %d\n", old_rows - 1);
+	fprintf(stderr, "must go up %d old_rows %d cursor_row %d\n", old_rows - 1, old_rows, row_col_cursor.row);
         for (int j = 0; j < old_rows - 1; j++)
         {
             buffer_append(&ab, "\r\x1b[0K\x1b[1A", strlen("\r\x1b[0K\x1b[1A"));
