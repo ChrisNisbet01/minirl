@@ -203,11 +203,11 @@ calculate_row_col(
 	for (char const * pch = line;
 	     *pch != '\0' && char_count < max_chars;
 	     pch++, char_count++) {
+		row_col.col++;
+		/* TODO: Support '\t' <TAB> characters. 8 chars per TAB. */
 		if (row_col.col == terminal_width || *pch == '\n') {
 			row_col.row++;
-			row_col.col = 1;
-		} else {
-			row_col.col++;
+			row_col.col = 0;
 		}
 	}
 	*row_col_out = row_col;
@@ -264,24 +264,24 @@ refresh_line_clear_rows(minirl_st * const minirl, bool const row_clear_required)
     bool const clear_rows = (old_cols != l->cols) || row_clear_required;
     if (clear_rows)
     {
-	    int num_to_go_down = old_rows - row_col_cursor.row - 1;
 	    fprintf(stderr, "check must go down old_rows %d cursor row %d num: %d ch %d\n",
 		old_rows,
-		row_col_cursor.row,
-		num_to_go_down,
+		l->previous_cursor.row,
+		old_rows - l->previous_cursor.row - 1,
 		(int)l->line_buf->b[l->pos]);
-	if (old_rows - row_col_cursor.row - 1 > 0)
-        {
-            buffer_snprintf(&ab, seq, sizeof seq, "\x1b[%dB", old_rows - row_col_cursor.row - 1);
-        }
+	    if (old_rows > 1) {
+		if (old_rows - l->previous_cursor.row - 1 > 0) {
+			buffer_snprintf(&ab, seq, sizeof seq, "\x1b[%dB", old_rows - l->previous_cursor.row - 1);
+		}
 
-        /* Now for every row clear it, go up. */
-	fprintf(stderr, "check must go up old_rows %02d num: %02d\n", old_rows, old_rows - 1);
-        for (int j = 0; j < old_rows - 1; j++)
-        {
-		buffer_snprintf(&ab, seq, sizeof seq, "\r\x1b[0K"); /* Clear the row. */
-		buffer_snprintf(&ab, seq, sizeof seq, "\x1b[1A");   /* Go up one row. */
-        }
+		/* Now for every row clear it, go up. */
+		fprintf(stderr, "check must go up old_rows %02d num: %02d\n", old_rows, old_rows - 1);
+		for (size_t j = 0; j < old_rows - 1; j++)
+		{
+			buffer_snprintf(&ab, seq, sizeof seq, "\r\x1b[0K"); /* Clear the row. */
+			buffer_snprintf(&ab, seq, sizeof seq, "\x1b[1A");   /* Go up one row. */
+		}
+	    }
 
         /* Clean the top line. */
 	buffer_snprintf(&ab, seq, sizeof seq, "\r\x1b[0K"); /* Clear the row. */
@@ -304,23 +304,21 @@ refresh_line_clear_rows(minirl_st * const minirl, bool const row_clear_required)
     /*
      * If we are at the very end of the screen with our cursor, we need to
      * emit a newline and move the cursor to the first column.
+     * If the last character on that row is a '\n' there is no need to emit the
+     * newline because that characeter already did it.
      */
-    if (l->pos && l->pos == l->len
-	&& ((l->pos + plen) % l->cols) == 0)
+    if (l->pos > 0 && l->pos == l->len
+	&& row_col_cursor.row > 0 && row_col_cursor.col == 0
+	&& l->line_buf->b[l->pos - 1] != '\n')
     {
 	fprintf(stderr, "must move to next line and row_end col %d\n", row_col_end.col);
         buffer_append(&ab, "\n\r", strlen("\n\r"));
-	row_col_end.row++;
-	row_col_end.col = 0;
-	row_col_cursor.row++;
-	row_col_cursor.col = 0;
-        if (row_col_end.row + 1 > (int)l->maxrows)
-        {
-            l->maxrows = row_col_end.row + 1;
-        }
     }
 
-    /* Move cursor to right position. */
+    /*
+     * Move cursor to right position. At present it will be at the end of the
+     * current line.
+     */
 
     /* Go up till we reach the expected positon. */
     if (row_col_end.row - row_col_cursor.row > 0)
