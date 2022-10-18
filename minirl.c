@@ -236,10 +236,6 @@ refresh_line_clear_rows(minirl_st * const minirl, bool const row_clear_required)
     struct row_col_st row_col_cursor;
     calculate_row_col(l->cols, plen, l->line_buf->b, l->pos, &row_col_cursor);
 
-    fprintf(stderr, "\n");
-    fprintf(stderr, "cursor row %02d col %02d\n", row_col_cursor.row, row_col_cursor.col);
-    fprintf(stderr, "end    row %02d col %02d\n", row_col_end.row, row_col_end.col);
-
     char seq[64];
     int old_rows = l->maxrows;
     int const fd = minirl->out.fd;
@@ -264,18 +260,12 @@ refresh_line_clear_rows(minirl_st * const minirl, bool const row_clear_required)
     bool const clear_rows = (old_cols != l->cols) || row_clear_required;
     if (clear_rows)
     {
-	    fprintf(stderr, "check must go down old_rows %d cursor row %d num: %d ch %d\n",
-		old_rows,
-		l->previous_cursor.row,
-		old_rows - l->previous_cursor.row - 1,
-		(int)l->line_buf->b[l->pos]);
 	    if (old_rows > 1) {
 		if (old_rows - l->previous_cursor.row - 1 > 0) {
 			buffer_snprintf(&ab, seq, sizeof seq, "\x1b[%dB", old_rows - l->previous_cursor.row - 1);
 		}
 
 		/* Now for every row clear it, go up. */
-		fprintf(stderr, "check must go up old_rows %02d num: %02d\n", old_rows, old_rows - 1);
 		for (size_t j = 0; j < old_rows - 1; j++)
 		{
 			buffer_snprintf(&ab, seq, sizeof seq, "\r\x1b[0K"); /* Clear the row. */
@@ -305,13 +295,14 @@ refresh_line_clear_rows(minirl_st * const minirl, bool const row_clear_required)
      * If we are at the very end of the screen with our cursor, we need to
      * emit a newline and move the cursor to the first column.
      * If the last character on that row is a '\n' there is no need to emit the
-     * newline because that characeter already did it.
+     * newline because that character already moved the cursor.
      */
-    if (l->pos > 0 && l->pos == l->len
-	&& row_col_cursor.row > 0 && row_col_cursor.col == 0
+    if (l->pos > 0
+	&& l->pos == l->len
+	&& row_col_cursor.row > 0
+	&& row_col_cursor.col == 0
 	&& l->line_buf->b[l->pos - 1] != '\n')
     {
-	fprintf(stderr, "must move to next line and row_end col %d\n", row_col_end.col);
         buffer_append(&ab, "\n\r", strlen("\n\r"));
     }
 
@@ -388,11 +379,14 @@ minirl_edit_insert(minirl_st * const minirl, uint32_t * const flags, char const 
     if (l->len == l->pos) { /* Cursor is at the end of the line. */
 	    row_col_st new_row_col;
 
-	    calculate_row_col(l->cols, l->prompt_len, l->line_buf->b, strlen(l->line_buf->b), &new_row_col);
-
+	    calculate_row_col(l->cols, l->prompt_len, l->line_buf->b, l->len, &new_row_col);
+	    /*
+	     * As long as the cursor remains on the same row as before the
+	     * current character was added, and hasn't filled the terminal
+	     * width, there is no need for a full refresh.
+	     */
 	    if (l->previous_line_end.row == new_row_col.row
 		&& new_row_col.col != l->cols) {
-		    fprintf(stderr, "full refresh not required %d %d cols %zu\n", new_row_col.row, new_row_col.col, l->cols);
 		    require_full_refresh = false;
 	    }
     }
@@ -405,13 +399,6 @@ minirl_edit_insert(minirl_st * const minirl, uint32_t * const flags, char const 
     {
         /* Avoid a full update of the line in the trivial case. */
         char const d = minirl->options.mask_mode ? '*' : c;
-	row_col_st new_row_col;
-
-	calculate_row_col(l->cols, l->prompt_len, l->line_buf->b, strlen(l->line_buf->b), &new_row_col);
-	if (new_row_col.row > l->maxrows) {
-		fprintf(stderr, "updating maxrows to %d after trivial update\n", new_row_col.row);
-		l->maxrows = new_row_col.row;
-	}
 
         if (io_write(minirl->out.fd, &d, 1) == -1)
         {
