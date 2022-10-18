@@ -379,15 +379,30 @@ minirl_edit_insert(minirl_st * const minirl, uint32_t * const flags, char const 
     if (l->len == l->pos) { /* Cursor is at the end of the line. */
 	    cursor_st new_row_col;
 
-	    calculate_cursor_position(l->terminal_width, l->prompt_len, l->line_buf->b, l->len, &new_row_col);
+	    calculate_cursor_position(l->terminal_width,
+                                  l->prompt_len,
+                                  l->line_buf->b,
+                                  l->len,
+                                  &new_row_col);
 	    /*
 	     * As long as the cursor remains on the same row as before the
 	     * current character was added, and hasn't filled the terminal
-	     * width, there is no need for a full refresh.
+         * width, there is no need for a full refresh.
+         * If the character that filled the row (so col == 0) was a '\n' then
+         * the line still doesn't need to be refreshed.
 	     */
-	    if (l->previous_line_end.row == new_row_col.row
-		&& new_row_col.col != l->terminal_width) {
+	    if (new_row_col.col > 0 || c == '\n') {
 		    require_full_refresh = false;
+            /*
+             * After the io_write() is done the saved cursor position will
+             * become  out of date, so update the saved cursor positions to
+             * reflect where the current cursor position is after the io_write.
+             */
+            l->previous_cursor = new_row_col;
+            l->previous_line_end = new_row_col;
+            if (l->max_rows < (l->previous_line_end.row + 1)) {
+                    l->max_rows = l->previous_line_end.row + 1;
+            }
 	    }
     }
 
@@ -397,7 +412,11 @@ minirl_edit_insert(minirl_st * const minirl, uint32_t * const flags, char const 
     }
     else
     {
-        /* Avoid a full update of the line in the trivial case. */
+        /*
+         * Avoid a full update of the line in the case where the new character
+         * puts the cursor in the desired location. This is always the case
+         * except for when a line is completely filled.
+         */
         char const d = minirl->options.mask_mode ? '*' : c;
 
         if (io_write(minirl->out.fd, &d, 1) == -1)
