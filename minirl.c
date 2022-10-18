@@ -186,15 +186,15 @@ minirl_clear_screen(minirl_st * const minirl)
 }
 
 static void
-calculate_row_col(
+calculate_cursor_position(
 	size_t const terminal_width,
 	size_t const prompt_len,
 	char const * const line,
 	size_t const max_chars,
-	struct row_col_st * const row_col_out)
+	cursor_st * const cursor_out)
 {
 	/* Assume no newlines in the prompt. */
-	struct row_col_st row_col = {
+	cursor_st cursor = {
 		.row = prompt_len / terminal_width,
 		.col = prompt_len % terminal_width
 	};
@@ -203,14 +203,14 @@ calculate_row_col(
 	for (char const * pch = line;
 	     *pch != '\0' && char_count < max_chars;
 	     pch++, char_count++) {
-		row_col.col++;
+		cursor.col++;
 		/* TODO: Support '\t' <TAB> characters. 8 chars per TAB. */
-		if (row_col.col == terminal_width || *pch == '\n') {
-			row_col.row++;
-			row_col.col = 0;
+		if (cursor.col == terminal_width || *pch == '\n') {
+			cursor.row++;
+			cursor.col = 0;
 		}
 	}
-	*row_col_out = row_col;
+	*cursor_out = cursor;
 };
 
 
@@ -223,29 +223,22 @@ refresh_line_clear_rows(minirl_st * const minirl, bool const row_clear_required)
 {
     bool success = true;
     struct minirl_state * const l = &minirl->state;
-    size_t const old_cols = l->cols;
+    size_t const old_cols = l->terminal_width;
     //l->cols = minirl_terminal_width(minirl);
 
     int plen = strlen(l->prompt);
     /* Calculate row and column of end of line. */
-    struct row_col_st row_col_end;
-    calculate_row_col(l->cols, plen, l->line_buf->b, l->len, &row_col_end);
-    int num_rows = row_col_end.row + 1;
+    cursor_st line_end_cursor;
+    calculate_cursor_position(l->terminal_width, plen, l->line_buf->b, l->len, &line_end_cursor);
+    size_t const num_rows = line_end_cursor.row + 1;
 
     /* Calculate row and column of end of cursor. */
-    struct row_col_st row_col_cursor;
-    calculate_row_col(l->cols, plen, l->line_buf->b, l->pos, &row_col_cursor);
+    cursor_st current_cursor;
+    calculate_cursor_position(l->terminal_width, plen, l->line_buf->b, l->pos, &current_cursor);
 
     char seq[64];
-    int old_rows = l->maxrows;
     int const fd = minirl->out.fd;
     struct buffer ab;
-
-    /* Update maxrows if needed. */
-    if (num_rows > (int)l->maxrows)
-    {
-        l->maxrows = num_rows;
-    }
 
     buffer_init(&ab, 20);
     /*
@@ -257,16 +250,16 @@ refresh_line_clear_rows(minirl_st * const minirl, bool const row_clear_required)
      *
      * A full update is also required if the terminal width has changed.
      */
-    bool const clear_rows = (old_cols != l->cols) || row_clear_required;
+    bool const clear_rows = (old_cols != l->terminal_width) || row_clear_required;
     if (clear_rows)
     {
-	    if (old_rows > 1) {
-		if (old_rows - l->previous_cursor.row - 1 > 0) {
-			buffer_snprintf(&ab, seq, sizeof seq, "\x1b[%dB", old_rows - l->previous_cursor.row - 1);
+	    if (l->max_rows > 1) {
+		if (l->max_rows - l->previous_cursor.row - 1 > 0) {
+			buffer_snprintf(&ab, seq, sizeof seq, "\x1b[%dB", l->max_rows - l->previous_cursor.row - 1);
 		}
 
 		/* Now for every row clear it, go up. */
-		for (size_t j = 0; j < old_rows - 1; j++)
+		for (size_t j = 0; j < l->max_rows - 1; j++)
 		{
 			buffer_snprintf(&ab, seq, sizeof seq, "\r\x1b[0K"); /* Clear the row. */
 			buffer_snprintf(&ab, seq, sizeof seq, "\x1b[1A");   /* Go up one row. */
@@ -281,10 +274,9 @@ refresh_line_clear_rows(minirl_st * const minirl, bool const row_clear_required)
     buffer_append(&ab, l->prompt, strlen(l->prompt));
     if (minirl->options.mask_mode)
     {
-        for (size_t i = 0; i < l->len; i++)
-        {
-            buffer_append(&ab, "*", 1);
-        }
+	    for (size_t i = 0; i < l->len; i++) {
+		    buffer_append(&ab, "*", 1);
+	    }
     }
     else
     {
@@ -299,8 +291,8 @@ refresh_line_clear_rows(minirl_st * const minirl, bool const row_clear_required)
      */
     if (l->pos > 0
 	&& l->pos == l->len
-	&& row_col_cursor.row > 0
-	&& row_col_cursor.col == 0
+	&& current_cursor.row > 0
+	&& current_cursor.col == 0
 	&& l->line_buf->b[l->pos - 1] != '\n')
     {
         buffer_append(&ab, "\n\r", strlen("\n\r"));
@@ -312,15 +304,15 @@ refresh_line_clear_rows(minirl_st * const minirl, bool const row_clear_required)
      */
 
     /* Go up till we reach the expected positon. */
-    if (row_col_end.row - row_col_cursor.row > 0)
+    if (line_end_cursor.row - current_cursor.row > 0)
     {
-        buffer_snprintf(&ab, seq, sizeof seq, "\x1b[%dA", row_col_end.row - row_col_cursor.row);
+        buffer_snprintf(&ab, seq, sizeof seq, "\x1b[%dA", line_end_cursor.row - current_cursor.row);
     }
 
     /* Set column. */
-    if (row_col_cursor.col != 0)
+    if (current_cursor.col != 0)
     {
-        buffer_snprintf(&ab, seq, sizeof seq, "\r\x1b[%dC", row_col_cursor.col);
+        buffer_snprintf(&ab, seq, sizeof seq, "\r\x1b[%dC", current_cursor.col);
     }
     else
     {
@@ -328,8 +320,13 @@ refresh_line_clear_rows(minirl_st * const minirl, bool const row_clear_required)
     }
 
     l->oldpos = l->pos;
-    l->previous_cursor = row_col_cursor;
-    l->previous_line_end = row_col_end;
+    l->previous_cursor = current_cursor;
+    l->previous_line_end = line_end_cursor;
+    /* Update maxrows if needed. */
+    if (num_rows > l->max_rows)
+    {
+	l->max_rows = num_rows;
+    }
 
     if (io_write(fd, ab.b, ab.len) == -1)
     {
@@ -377,16 +374,16 @@ minirl_edit_insert(minirl_st * const minirl, uint32_t * const flags, char const 
     bool require_full_refresh = true;
 
     if (l->len == l->pos) { /* Cursor is at the end of the line. */
-	    row_col_st new_row_col;
+	    cursor_st new_row_col;
 
-	    calculate_row_col(l->cols, l->prompt_len, l->line_buf->b, l->len, &new_row_col);
+	    calculate_cursor_position(l->terminal_width, l->prompt_len, l->line_buf->b, l->len, &new_row_col);
 	    /*
 	     * As long as the cursor remains on the same row as before the
 	     * current character was added, and hasn't filled the terminal
 	     * width, there is no need for a full refresh.
 	     */
 	    if (l->previous_line_end.row == new_row_col.row
-		&& new_row_col.col != l->cols) {
+		&& new_row_col.col != l->terminal_width) {
 		    require_full_refresh = false;
 	    }
     }
@@ -1020,14 +1017,14 @@ static int minirl_edit(
     l->oldpos = 0;
     l->pos = 0;
     l->len = 0;
-    l->cols = minirl_terminal_width(minirl);
-    l->maxrows = 1;
+    l->terminal_width = minirl_terminal_width(minirl);
+    l->max_rows = 1;
     l->history_index = 0;
 
     /* Buffer starts empty. */
     l->line_buf->b[0] = '\0';
-    calculate_row_col(l->cols, l->prompt_len, l->line_buf->b, 0, &l->previous_cursor);
-    calculate_row_col(l->cols, l->prompt_len, l->line_buf->b, 0, &l->previous_line_end);
+    calculate_cursor_position(l->terminal_width, l->prompt_len, l->line_buf->b, 0, &l->previous_cursor);
+    calculate_cursor_position(l->terminal_width, l->prompt_len, l->line_buf->b, 0, &l->previous_line_end);
 
     /* The latest history entry is always our current buffer, that
      * initially is just an empty string. */
