@@ -52,16 +52,15 @@ minirl_display_matches(minirl_st * minirl, char * * matches);
 bool
 minirl_refresh_line(minirl_st * minirl);
 
-typedef enum minirl_key_handler_flags_t
-{
-	minirl_key_handler_done = 0x01,
-    minirl_key_handler_refresh = 0x02,
-    minirl_key_handler_error = 0x04
-} minirl_key_handler_flags_t;
+typedef struct minirl_key_handler_flags_st {
+	bool done;
+	bool refresh_required;
+	bool error;
+} minirl_key_handler_flags_st;
 
 typedef bool (*minirl_key_binding_handler_cb)(
 	minirl_st *minirl,
-	uint32_t * flags,
+	minirl_key_handler_flags_st *flags,
     char const * key,
     void * user_ctx);
 
