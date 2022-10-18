@@ -26,7 +26,6 @@ struct minirl_state {
 	size_t pos;		/* Current cursor position. */
 	size_t len;		/* Current edited line length. */
 
-	size_t oldpos;		/* Previous refresh cursor position. */
 	size_t terminal_width;	/* Number of columns in terminal. */
 	size_t max_rows;	/* Maximum num of rows used so far */
 	int history_index;	/* The history index we are currently editing. */

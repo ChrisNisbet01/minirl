@@ -230,7 +230,6 @@ refresh_line_clear_rows(minirl_st * const minirl, bool const row_clear_required)
     /* Calculate row and column of end of line. */
     cursor_st line_end_cursor;
     calculate_cursor_position(l->terminal_width, prompt_len, l->line_buf->b, l->len, &line_end_cursor);
-    size_t const num_rows = line_end_cursor.row + 1;
 
     /* Calculate row and column of end of cursor. */
     cursor_st current_cursor;
@@ -262,7 +261,7 @@ refresh_line_clear_rows(minirl_st * const minirl, bool const row_clear_required)
 		    /* Now for every row clear it, then go up. */
 		    for (size_t j = 0; j < l->max_rows - 1; j++) {
 			    buffer_snprintf(&ab, seq, sizeof seq, "\r\x1b[0K"); /* Clear the row. */
-			    buffer_snprintf(&ab, seq, sizeof seq, "\x1b[1A");   /* Go up one row. */
+			    buffer_snprintf(&ab, seq, sizeof seq, "\x1bM");     /* Go up one row. */
 		    }
 	    }
 
@@ -294,12 +293,11 @@ refresh_line_clear_rows(minirl_st * const minirl, bool const row_clear_required)
      * newline because that character already moved the cursor.
      */
     if (l->pos > 0
-	&& l->pos == l->len
-	&& current_cursor.row > 0
-	&& current_cursor.col == 0
-	&& l->line_buf->b[l->pos - 1] != '\n')
-    {
-        buffer_append(&ab, "\n\r", strlen("\n\r"));
+        && l->pos == l->len
+        && current_cursor.row > 0
+        && current_cursor.col == 0
+        && l->line_buf->b[l->pos - 1] != '\n') {
+            buffer_append(&ab, "\n\r", strlen("\n\r"));
     }
 
     /*
@@ -323,10 +321,11 @@ refresh_line_clear_rows(minirl_st * const minirl, bool const row_clear_required)
         buffer_append(&ab, "\r", strlen("\r"));
     }
 
-    l->oldpos = l->pos;
     l->previous_cursor = current_cursor;
     l->previous_line_end = line_end_cursor;
-    /* Update maxrows if needed. */
+
+    /* Update max_rows if needed. */
+    size_t const num_rows = line_end_cursor.row + 1;
     if (num_rows > l->max_rows)
     {
 	l->max_rows = num_rows;
@@ -1018,7 +1017,6 @@ static int minirl_edit(
     l->line_buf = line_buf;
     l->prompt = prompt;
     l->prompt_len = strlen(prompt);
-    l->oldpos = 0;
     l->pos = 0;
     l->len = 0;
     l->terminal_width = minirl_terminal_width(minirl);
