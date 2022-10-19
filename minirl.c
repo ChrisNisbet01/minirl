@@ -790,7 +790,9 @@ static bool
 ctrl_c_handler(minirl_st * const minirl, char const *key, void * const user_ctx)
 {
 	/* Clear the whole line and indicate that processing is done. */
-	delete_whole_line(&minirl->state);
+	if (delete_whole_line(&minirl->state)) {
+		minirl_requires_refresh(minirl);
+	}
 	minirl_is_done(minirl);
 
 	return true;
