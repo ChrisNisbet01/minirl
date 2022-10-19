@@ -352,83 +352,76 @@ minirl_refresh_line(minirl_st * const minirl)
  *
  * On error writing to the terminal -1 is returned, otherwise 0. */
 static int
-minirl_edit_insert(
-        minirl_st * const minirl,
-        char const c)
+minirl_edit_insert(minirl_st * const minirl, char const c)
 {
-    struct minirl_state * const l = &minirl->state;
+	struct minirl_state * const l = &minirl->state;
 
-    if (l->len >= l->line_buf->capacity)
-    {
-        if (!buffer_grow(l->line_buf, l->len - l->line_buf->capacity))
-        {
-            goto done;
-        }
-    }
-    fprintf(stderr, "insert %d\n", (int)c);
-    /* Insert the new char into the line buffer. */
-    if (l->len != l->pos)
-    {
-        memmove(l->line_buf->b + l->pos + 1, l->line_buf->b + l->pos, l->len - l->pos);
-    }
-    l->line_buf->b[l->pos] = c;
-    l->len++;
-    l->pos++;
-    l->line_buf->b[l->len] = '\0';
+	if (l->len >= l->line_buf->capacity) {
+		if (!buffer_grow(l->line_buf, l->len - l->line_buf->capacity)) {
+			goto done;
+		}
+	}
 
-    bool require_full_refresh = true;
+	/* Insert the new char into the line buffer. */
+	if (l->len != l->pos) {
+		memmove(l->line_buf->b + l->pos + 1,
+			l->line_buf->b + l->pos,
+			l->len - l->pos);
+	}
+	l->line_buf->b[l->pos] = c;
+	l->len++;
+	l->pos++;
+	l->line_buf->b[l->len] = '\0';
 
-    if (l->len == l->pos) { /* Cursor is at the end of the line. */
-	    cursor_st new_row_col;
+	bool require_full_refresh = true;
 
-	    calculate_cursor_position(l->terminal_width,
-                                  l->prompt_len,
-                                  l->line_buf->b,
-                                  l->len,
-                                  &new_row_col);
-	    /*
-	     * As long as the cursor remains on the same row as before the
-	     * current character was added, and hasn't filled the terminal
-         * width, there is no need for a full refresh.
-         * If the character that filled the row (so col == 0) was a '\n' then
-         * the line still doesn't need to be refreshed.
-	     */
-	    if (new_row_col.col > 0 || c == '\n') {
-		    require_full_refresh = false;
-            /*
-             * After the io_write() is done the saved cursor position will
-             * become  out of date, so update the saved cursor positions to
-             * reflect where the current cursor position is after the io_write.
-             */
-            l->previous_cursor = new_row_col;
-            l->previous_line_end = new_row_col;
-            if (l->max_rows < (l->previous_line_end.row + 1)) {
-                    l->max_rows = l->previous_line_end.row + 1;
-            }
-	    }
-    }
+	if (l->len == l->pos) { /* Cursor is at the end of the line. */
+		cursor_st new_line_end;
 
-    if (require_full_refresh)
-    {
-            minirl_requires_refresh(minirl);
-    }
-    else
-    {
-        /*
-         * Avoid a full update of the line in the case where the new character
-         * puts the cursor in the desired location. This is always the case
-         * except for when a line is completely filled.
-         */
-        char const d = minirl->options.mask_mode ? '*' : c;
+		calculate_cursor_position(l->terminal_width,
+					  l->prompt_len,
+					  l->line_buf->b,
+					  l->len,
+					  &new_line_end);
+		/*
+		 * As long as the cursor remains on the same row as before the
+		 * current character was added, and hasn't filled the terminal
+		 * width, there is no need for a full refresh.
+		 * If the character that filled the row (so col == 0) was a '\n'
+		 * then the line still doesn't need to be refreshed.
+		 */
+		if (new_line_end.col > 0 || c == '\n') {
+			require_full_refresh = false;
+			/*
+			 * After the io_write() is done the saved cursor position will
+			 * become  out of date, so update the saved cursor positions to
+			 * reflect where the current cursor position is after the io_write.
+			 */
+			l->previous_cursor = new_line_end;
+			l->previous_line_end = new_line_end;
+			if (l->max_rows < (l->previous_line_end.row + 1)) {
+				l->max_rows = l->previous_line_end.row + 1;
+			}
+		}
+	}
 
-        if (io_write(minirl->out.fd, &d, 1) == -1)
-        {
-            return -1;
-        }
-    }
+	if (require_full_refresh) {
+		minirl_requires_refresh(minirl);
+	} else {
+		/*
+		 * Avoid a full update of the line in the case where the new character
+		 * puts the cursor in the desired location. This is always the case
+		 * except for when a line is completely filled.
+		 */
+		char const d = minirl->options.mask_mode ? '*' : c;
+
+		if (io_write(minirl->out.fd, &d, 1) == -1) {
+			return -1;
+		}
+	}
 
 done:
-    return 0;
+	return 0;
 }
 
 /* Move cursor to the end of the line. */
