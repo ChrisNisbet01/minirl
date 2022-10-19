@@ -503,6 +503,25 @@ delete_char_left(struct minirl_state * const l)
 
 	return false;
 }
+
+static bool
+delete_all_chars_left(struct minirl_state * const l)
+{
+	/* Delete all chars to the left of the cursor. */
+	if (l->pos > 0 && l->len > 0) {
+		memmove(l->line_buf->b,
+			l->line_buf->b + l->pos,
+			l->len - l->pos);
+		l->len -= l->pos;
+		l->pos = 0;
+		l->line_buf->b[l->len] = '\0';
+
+		return true;
+	}
+
+	return false;
+}
+
 /*
  * Delete the previous word, maintaining the cursor at the start of the
  * current word.
@@ -788,8 +807,8 @@ ctrl_t_handler(minirl_st * const minirl, char const *key, void * const user_ctx)
 static bool
 ctrl_u_handler(minirl_st * const minirl, char const *key, void * const user_ctx)
 {
-	/* Delete the whole line. */
-	if (delete_whole_line(&minirl->state)) {
+	/* Delete everythng before the cursor. */
+	if (delete_all_chars_left(&minirl->state)) {
 		minirl_requires_refresh(minirl);
 	}
 
