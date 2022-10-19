@@ -176,7 +176,18 @@ minirl_clear_screen(minirl_st * const minirl)
 }
 
 static void
-calculate_cursor_position(
+cursor_add_ch(cursor_st * const cursor, char const ch, size_t const terminal_width)
+{
+	cursor->col++;
+	/* TODO: Support '\t' <TAB> characters. 8 chars per TAB. */
+	if (cursor->col == terminal_width || ch == '\n') {
+		cursor->row++;
+		cursor->col = 0;
+	}
+}
+
+static void
+cursor_calculate_position(
 	size_t const terminal_width,
 	size_t const prompt_len,
 	char const * const line,
@@ -193,12 +204,7 @@ calculate_cursor_position(
 	for (char const *pch = line;
 	     *pch != '\0' && char_count < max_chars;
 	     pch++, char_count++) {
-		cursor.col++;
-		/* TODO: Support '\t' <TAB> characters. 8 chars per TAB. */
-		if (cursor.col == terminal_width || *pch == '\n') {
-			cursor.row++;
-			cursor.col = 0;
-		}
+		cursor_add_ch(&cursor, *pch, terminal_width);
 	}
 	*cursor_out = cursor;
 };
@@ -219,12 +225,12 @@ refresh_line_clear_rows(minirl_st * const minirl, bool const row_clear_required)
 	size_t const prompt_len = strlen(l->prompt);
 	/* Calculate row and column of end of line. */
 	cursor_st line_end_cursor;
-	calculate_cursor_position(
+	cursor_calculate_position(
 		l->terminal_width, prompt_len, l->line_buf->b, l->len, &line_end_cursor);
 
 	/* Calculate row and column of end of cursor. */
 	cursor_st current_cursor;
-	calculate_cursor_position(
+	cursor_calculate_position(
 		l->terminal_width, prompt_len, l->line_buf->b, l->pos, &current_cursor);
 
 	char seq[64];
@@ -365,13 +371,9 @@ minirl_edit_insert(minirl_st * const minirl, char const c)
 	bool require_full_refresh = true;
 
 	if (l->len == l->pos) { /* Cursor is at the end of the line. */
-		cursor_st new_line_end;
+		cursor_st new_line_end = l->previous_cursor;
 
-		calculate_cursor_position(l->terminal_width,
-					  l->prompt_len,
-					  l->line_buf->b,
-					  l->len,
-					  &new_line_end);
+		cursor_add_ch(&new_line_end, c, l->terminal_width);
 		/*
 		 * As long as the cursor remains on the same row as before the
 		 * current character was added, and hasn't filled the terminal
@@ -925,8 +927,7 @@ static int minirl_edit(
 
 	struct minirl_state * const l = &minirl->state;
 
-	/* Populate the minirl state that we pass to functions implementing
-	 * specific editing functionalities. */
+	/* Populate the minirl state implementing editing functionalities. */
 	l->line_buf = line_buf;
 	l->prompt = prompt;
 	l->prompt_len = strlen(prompt);
@@ -938,11 +939,17 @@ static int minirl_edit(
 
 	/* Buffer starts empty. */
 	l->line_buf->b[0] = '\0';
-	calculate_cursor_position(l->terminal_width, l->prompt_len, l->line_buf->b, 0, &l->previous_cursor);
-	calculate_cursor_position(l->terminal_width, l->prompt_len, l->line_buf->b, 0, &l->previous_line_end);
+	cursor_calculate_position(l->terminal_width,
+				  l->prompt_len,
+				  l->line_buf->b,
+				  0,
+				  &l->previous_cursor);
+	l->previous_line_end = l->previous_cursor;
 
-	/* The latest history entry is always our current buffer, that
-	 * initially is just an empty string. */
+	/*
+	 * The latest history entry is always our current buffer, that
+	 * initially is just an empty string.
+	 */
 	minirl_history_add(minirl, "");
 
 	if (io_write(minirl->out.fd, prompt, l->prompt_len) == -1) {
@@ -962,6 +969,7 @@ static int minirl_edit(
 		key_handler_lookup(minirl, &c, &handler, &user_ctx);
 
 		if (handler != NULL) {
+			/* TODO: Should pass the complete key sequence. */
 			char key_str[2] = { c, '\0' };
 
 			memset(&l->flags, 0, sizeof(l->flags));
