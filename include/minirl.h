@@ -55,9 +55,6 @@ void
 minirl_display_matches(minirl_st *minirl, char **matches);
 
 bool
-minirl_refresh_line(minirl_st *minirl);
-
-bool
 minirl_bind_key(
 	minirl_st *minirl,
 	uint8_t key,
@@ -90,7 +87,7 @@ void
 minirl_set_mask_mode(minirl_st *minirl, bool enable);
 
 void
-minirl_force_isatty(minirl_st * const minirl);
+minirl_force_isatty(minirl_st * minirl);
 
 struct minirl_st *
 minirl_new(FILE *in_stream, FILE *out_stream);
@@ -99,13 +96,16 @@ void
 minirl_delete(minirl_st *minirl);
 
 int
-minirl_printf(minirl_st * const minirl, char const * const fmt, ...);
+minirl_printf(minirl_st * minirl, char const * fmt, ...);
 
 void
 minirl_is_done(minirl_st *minirl);
 
 void
 minirl_requires_refresh(minirl_st *minirl);
+
+void
+minirl_requires_cursor_refresh(minirl_st * minirl);
 
 void
 minirl_had_error(minirl_st *minirl);

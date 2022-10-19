@@ -50,7 +50,7 @@ minirl_printf(minirl_st * const minirl, char const * const fmt, ...)
 static bool
 move_cursor_right(struct minirl_state * const l)
 {
-	if (l->pos != l->len) {
+	if (l->pos < l->len) {
 		l->pos++;
 		return true;
 	}
@@ -72,7 +72,7 @@ move_cursor_left(struct minirl_state * const l)
 static bool
 move_cursor_home(struct minirl_state * const l)
 {
-	if (l->pos != 0) {
+	if (l->pos > 0) {
 		l->pos = 0;
 		return true;
 	}
@@ -84,7 +84,7 @@ move_cursor_home(struct minirl_state * const l)
 static bool
 move_cursor_end(struct minirl_state * const l)
 {
-	if (l->pos != l->len) {
+	if (l->pos < l->len) {
 		l->pos = l->len;
 		return true;
 	}
@@ -113,7 +113,11 @@ minirl_end_get(minirl_st * const minirl)
 void
 minirl_point_set(minirl_st * const minirl, size_t const new_point)
 {
-	minirl->state.pos = new_point;
+	if (minirl->state.pos != new_point
+	    && new_point <= minirl->state.len) {
+		minirl->state.pos = new_point;
+		minirl_requires_cursor_refresh(minirl);
+	}
 }
 
 /* Enable or disable "mask mode". When it is enabled, instead of the input that
@@ -235,11 +239,64 @@ cursor_calculate_position(
 	*cursor_out = cursor;
 };
 
+static bool
+minirl_refresh_cursor(minirl_st * const minirl)
+{
+	bool success = true;
+	struct minirl_state * const l = &minirl->state;
+
+	/* Calculate row and column of current cursor. */
+	cursor_st current_cursor;
+	cursor_calculate_position(
+		l->terminal_width, l->prompt_len, l->line_buf->b, l->pos, &current_cursor);
+
+	/* Check that the cursor has actually moved. */
+	if (current_cursor.row == l->previous_cursor.row
+	    && current_cursor.col == l->previous_cursor.col) {
+		return true;
+	}
+
+	char seq[64];
+	struct buffer ab;
+
+	buffer_init(&ab, 20);
+
+	/* Update the cursor position. */
+	if (current_cursor.row < l->previous_cursor.row) {
+		int const up_count = l->previous_cursor.row - current_cursor.row;
+
+		buffer_snprintf(&ab, seq, sizeof seq, "\x1b[%dA", up_count);
+	} else if (current_cursor.row > l->previous_cursor.row) {
+		int const down_count = current_cursor.row - l->previous_cursor.row;
+
+		buffer_snprintf(&ab, seq, sizeof seq, "\x1b[%dB", down_count);
+	}
+	if (current_cursor.col > l->previous_cursor.col) {
+		int const right_count = current_cursor.col - l->previous_cursor.col;
+
+		buffer_snprintf(&ab, seq, sizeof seq, "\x1b[%dC", right_count);
+	} else if (current_cursor.col < l->previous_cursor.col) {
+		int const left_count = l->previous_cursor.col - current_cursor.col;
+
+		buffer_snprintf(&ab, seq, sizeof seq, "\x1b[%dD", left_count);
+	}
+
+	l->previous_cursor = current_cursor;
+	l->flags.cursor_refresh_required = false;
+
+	if (io_write(minirl->out.fd, ab.b, ab.len) == -1) {
+		success = false;
+	}
+	buffer_clear(&ab);
+
+	return success;
+}
 
 /* Multi line low level line refresh.
  *
  * Rewrite the currently edited line accordingly to the buffer content,
- * cursor position, and number of columns of the terminal. */
+ * cursor position, and number of columns of the terminal.
+ */
 static bool
 refresh_line_clear_rows(minirl_st * const minirl, bool const row_clear_required)
 {
@@ -349,6 +406,7 @@ refresh_line_clear_rows(minirl_st * const minirl, bool const row_clear_required)
 		l->max_rows = num_rows;
 	}
 	l->flags.refresh_required = false;
+	l->flags.cursor_refresh_required = false;
 
 	if (io_write(minirl->out.fd, ab.b, ab.len) == -1) {
 		success = false;
@@ -358,7 +416,7 @@ refresh_line_clear_rows(minirl_st * const minirl, bool const row_clear_required)
 	return success;
 }
 
-bool
+static bool
 minirl_refresh_line(minirl_st * const minirl)
 {
 	bool const clear_rows = true;
@@ -671,7 +729,7 @@ right_handler(minirl_st * const minirl, char const *key, void * const user_ctx)
 {
 	/* Move the cursor right one position. */
 	if (move_cursor_right(&minirl->state)) {
-		minirl_requires_refresh(minirl);
+		minirl_requires_cursor_refresh(minirl);
 	}
 
 	return true;
@@ -682,7 +740,7 @@ left_handler(minirl_st * const minirl, char const *key, void * const user_ctx)
 {
 	/* Move the cursor left one position. */
 	if (move_cursor_left(&minirl->state)) {
-		minirl_requires_refresh(minirl);
+		minirl_requires_cursor_refresh(minirl);
 	}
 
 	return true;
@@ -693,7 +751,7 @@ home_handler(minirl_st * const minirl, char const *key, void * const user_ctx)
 {
 	/* Move the cursor to the start of the line. */
 	if (move_cursor_home(&minirl->state)) {
-		minirl_requires_refresh(minirl);
+		minirl_requires_cursor_refresh(minirl);
 	}
 
 	return true;
@@ -704,7 +762,7 @@ end_handler(minirl_st * const minirl, char const *key, void * const user_ctx)
 {
 	/* Move the cursor to the EOL. */
 	if (move_cursor_end(&minirl->state)) {
-		minirl_requires_refresh(minirl);
+		minirl_requires_cursor_refresh(minirl);
 	}
 
 	return true;
@@ -947,7 +1005,10 @@ static int minirl_edit(
 			}
 			if (l->flags.refresh_required) {
 				minirl_refresh_line(minirl);
+			} else if (l->flags.cursor_refresh_required) {
+				minirl_refresh_cursor(minirl);
 			}
+
 			if (l->flags.done) {
 				minirl_edit_done(minirl);
 				break;
@@ -1444,6 +1505,12 @@ void
 minirl_requires_refresh(minirl_st * const minirl)
 {
 	minirl->state.flags.refresh_required = true;
+}
+
+void
+minirl_requires_cursor_refresh(minirl_st * const minirl)
+{
+	minirl->state.flags.cursor_refresh_required = true;
 }
 
 void

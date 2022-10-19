@@ -20,6 +20,7 @@ typedef struct cursor_st {
 typedef struct minirl_key_handler_flags_st {
 	bool done;
 	bool refresh_required;
+	bool cursor_refresh_required;
 	bool error;
 } minirl_key_handler_flags_st;
 
