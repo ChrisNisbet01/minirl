@@ -326,10 +326,10 @@ refresh_line_clear_rows(minirl_st * const minirl, bool const row_clear_required)
 
     /* Update max_rows if needed. */
     size_t const num_rows = line_end_cursor.row + 1;
-    if (num_rows > l->max_rows)
-    {
-	l->max_rows = num_rows;
+    if (num_rows > l->max_rows) {
+            l->max_rows = num_rows;
     }
+    l->flags.refresh_required = false;
 
     if (io_write(fd, ab.b, ab.len) == -1)
     {
@@ -354,7 +354,6 @@ minirl_refresh_line(minirl_st * const minirl)
 static int
 minirl_edit_insert(
         minirl_st * const minirl,
-        minirl_key_handler_flags_st * const flags,
         char const c)
 {
     struct minirl_state * const l = &minirl->state;
@@ -411,7 +410,7 @@ minirl_edit_insert(
 
     if (require_full_refresh)
     {
-            flags->refresh_required = true;
+            minirl_requires_refresh(minirl);
     }
     else
     {
@@ -644,7 +643,6 @@ minirl_edit_done(minirl_st * const minirl)
 static bool
 null_handler(
     minirl_st * const minirl,
-    minirl_key_handler_flags_st * const flags,
     char const * const key,
     void * const user_ctx)
 {
@@ -658,14 +656,13 @@ null_handler(
 static bool
 delete_handler(
     minirl_st * const minirl,
-    minirl_key_handler_flags_st * const flags,
     char const * const key,
     void * const user_ctx)
 {
     /* Delete the character to the right of the cursor. */
     if (delete_char_right(&minirl->state))
     {
-            flags->refresh_required = true;
+            minirl_requires_refresh(minirl);
     }
 
     return true;
@@ -674,14 +671,13 @@ delete_handler(
 static bool
 up_handler(
     minirl_st * const minirl,
-    minirl_key_handler_flags_st * const flags,
     char const * const key,
     void * const user_ctx)
 {
     /* Show the previous history entry. */
     if (minirl_edit_history_next(minirl, minirl_HISTORY_PREV))
     {
-            flags->refresh_required = true;
+            minirl_requires_refresh(minirl);
     }
 
     return true;
@@ -690,14 +686,13 @@ up_handler(
 static bool
 down_handler(
     minirl_st * const minirl,
-    minirl_key_handler_flags_st * const flags,
     char const * const key,
     void * const user_ctx)
 {
     /* Show the next history entry. */
     if (minirl_edit_history_next(minirl, minirl_HISTORY_NEXT))
     {
-            flags->refresh_required = true;
+            minirl_requires_refresh(minirl);
     }
 
     return true;
@@ -706,14 +701,13 @@ down_handler(
 static bool
 right_handler(
     minirl_st * const minirl,
-    minirl_key_handler_flags_st * const flags,
     char const * key,
     void * const user_ctx)
 {
     /* Move the cursor right one position. */
     if (move_cursor_right(&minirl->state))
     {
-            flags->refresh_required = true;
+            minirl_requires_refresh(minirl);
     }
 
     return true;
@@ -722,14 +716,13 @@ right_handler(
 static bool
 left_handler(
     minirl_st * const minirl,
-    minirl_key_handler_flags_st * const flags,
     char const * key,
     void * const user_ctx)
 {
     /* Move the cursor left one position. */
     if (move_cursor_left(&minirl->state))
     {
-            flags->refresh_required = true;
+            minirl_requires_refresh(minirl);
     }
 
     return true;
@@ -738,14 +731,13 @@ left_handler(
 static bool
 home_handler(
     minirl_st * const minirl,
-    minirl_key_handler_flags_st * const flags,
     char const * key,
     void * const user_ctx)
 {
     /* Move the cursor to the start of the line. */
     if (move_cursor_home(&minirl->state))
     {
-            flags->refresh_required = true;
+            minirl_requires_refresh(minirl);
     }
 
     return true;
@@ -754,14 +746,13 @@ home_handler(
 static bool
 end_handler(
     minirl_st * const minirl,
-    minirl_key_handler_flags_st * const flags,
     char const * key,
     void * const user_ctx)
 {
     /* Move the cursor to the EOL. */
     if (move_cursor_end(&minirl->state))
     {
-            flags->refresh_required = true;
+            minirl_requires_refresh(minirl);
     }
 
     return true;
@@ -769,15 +760,14 @@ end_handler(
 
 static bool
 default_handler(
-    minirl_st * const minirl,
-    minirl_key_handler_flags_st * const flags,
-    char const * key,
-    void * const user_ctx)
+        minirl_st * const minirl,
+        char const * key,
+        void * const user_ctx)
 {
     /* Insert the key at the current cursor position. */
-    if (minirl_edit_insert(minirl, flags, *key) != 0)
+    if (minirl_edit_insert(minirl, *key) != 0)
     {
-            flags->refresh_required = true;
+            minirl_requires_refresh(minirl);
     }
     return true;
 }
@@ -786,12 +776,10 @@ default_handler(
 static bool
 enter_handler(
     minirl_st * const minirl,
-    minirl_key_handler_flags_st * const flags,
     char const * key,
     void * const user_ctx)
 {
-    /* Indicate that processing is done. */
-        flags->done = true;
+    minirl_is_done(minirl);
 
     return true;
 }
@@ -799,13 +787,12 @@ enter_handler(
 static bool
 ctrl_c_handler(
     minirl_st * const minirl,
-    minirl_key_handler_flags_st * const flags,
     char const * key,
     void * const user_ctx)
 {
     /* Clear the whole line and indicate that processing is done. */
     delete_whole_line(&minirl->state);
-    flags->done = true;
+    minirl_is_done(minirl);
 
     return true;
 }
@@ -813,13 +800,12 @@ ctrl_c_handler(
 static bool
 backspace_handler(
         minirl_st * const minirl,
-        minirl_key_handler_flags_st * const flags,
         char const *key,
         void * const user_ctx)
 {
         /* Delete the character to the left of the cursor. */
         if (delete_char_left(&minirl->state)) {
-                flags->refresh_required = true;
+                minirl_requires_refresh(minirl);
         }
 
         return true;
@@ -828,7 +814,6 @@ backspace_handler(
 static bool
 ctrl_d_handler(
     minirl_st * const minirl,
-    minirl_key_handler_flags_st * const flags,
     char const * key,
     void * const user_ctx)
 {
@@ -841,13 +826,13 @@ ctrl_d_handler(
 
     if (l->len > 0)
     {
-        result = delete_handler(minirl, flags, key, user_ctx);
+        result = delete_handler(minirl, key, user_ctx);
     }
     else
     {
         /* Line is empty, so indicate an error. */
         remove_current_line_from_history(minirl);
-        flags->error = true;
+        minirl_had_error(minirl);
         result = true;
     }
 
@@ -857,7 +842,6 @@ ctrl_d_handler(
 static bool
 ctrl_t_handler(
     minirl_st * const minirl,
-    minirl_key_handler_flags_st * const flags,
     char const * key,
     void * const user_ctx)
 {
@@ -867,7 +851,7 @@ ctrl_t_handler(
      */
     if (swap_chars_at_cursor(&minirl->state))
     {
-            flags->refresh_required = true;
+            minirl_requires_refresh(minirl);
     }
 
     return true;
@@ -876,13 +860,12 @@ ctrl_t_handler(
 static bool
 ctrl_u_handler(
     minirl_st * const minirl,
-    minirl_key_handler_flags_st * const flags,
     char const * key,
     void * const user_ctx)
 {
     /* Delete the whole line. */
     delete_whole_line(&minirl->state);
-    flags->refresh_required = true;
+    minirl_requires_refresh(minirl);
 
     return true;
 }
@@ -890,13 +873,12 @@ ctrl_u_handler(
 static bool
 ctrl_k_handler(
     minirl_st * const minirl,
-    minirl_key_handler_flags_st * const flags,
     char const * key,
     void * const user_ctx)
 {
     /* Delete from cursor to EOL. */
     delete_from_cursor_to_eol(&minirl->state);
-    flags->refresh_required = true;
+    minirl_requires_refresh(minirl);
 
     return true;
 }
@@ -904,13 +886,12 @@ ctrl_k_handler(
 static bool
 ctrl_l_handler(
     minirl_st * const minirl,
-    minirl_key_handler_flags_st * const flags,
     char const * key,
     void * const user_ctx)
 {
     /* Clear the screen and move the cursor to EOL. */
     minirl_clear_screen(minirl);
-    flags->refresh_required = true;
+    minirl_requires_refresh(minirl);
 
     return true;
 }
@@ -918,7 +899,6 @@ ctrl_l_handler(
 static bool
 ctrl_w_handler(
     minirl_st * const minirl,
-    minirl_key_handler_flags_st * const flags,
     char const * key,
     void * const user_ctx)
 {
@@ -926,7 +906,7 @@ ctrl_w_handler(
     struct minirl_state * const l = &minirl->state;
 
     minirl_edit_delete_prev_word(minirl, l);
-    flags->refresh_required = true;
+    minirl_requires_refresh(minirl);
 
     return true;
 }
@@ -1075,19 +1055,20 @@ static int minirl_edit(
         if (handler != NULL)
         {
             char key_str[2] = { c, '\0' };
-            minirl_key_handler_flags_st flags = { 0 };
-            bool const res = handler(minirl, &flags, key_str, user_ctx);
+
+            memset(&l->flags, 0, sizeof(l->flags));
+            bool const res = handler(minirl, key_str, user_ctx);
             (void)res;
 
-            if (flags.error)
+            if (l->flags.error)
             {
                 return -1;
             }
-            if (flags.refresh_required)
+            if (l->flags.refresh_required)
             {
                 minirl_refresh_line(minirl);
             }
-            if (flags.done)
+            if (l->flags.done)
             {
                 minirl_edit_done(minirl);
                 break;
@@ -1425,23 +1406,18 @@ minirl_insert_text_len(
     char const * const text,
     size_t const count)
 {
-        minirl_key_handler_flags_st flags = { 0 };
-
     for (size_t i = 0; i < count; i++)
     {
-        minirl_edit_insert(minirl, &flags, text[i]);
-    }
-
-    if (flags.refresh_required)
-    {
-        minirl_refresh_line(minirl);
+        minirl_edit_insert(minirl, text[i]);
     }
 
     return true;
 }
 
 bool
-minirl_insert_text(minirl_st * const minirl, char const * const text)
+minirl_insert_text(
+        minirl_st * const minirl,
+        char const * const text)
 {
     return minirl_insert_text_len(minirl, text, strlen(text));
 }
@@ -1660,5 +1636,23 @@ minirl_delete(minirl_st * const minirl)
 
 done:
     return;
+}
+
+void
+minirl_is_done(minirl_st * const minirl)
+{
+        minirl->state.flags.done = true;
+}
+
+void
+minirl_requires_refresh(minirl_st * const minirl)
+{
+        minirl->state.flags.refresh_required = true;
+}
+
+void
+minirl_had_error(minirl_st * const minirl)
+{
+        minirl->state.flags.error = true;
 }
 

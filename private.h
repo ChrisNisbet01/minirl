@@ -17,6 +17,11 @@ typedef struct cursor_st {
 	int col;
 } cursor_st;
 
+typedef struct minirl_key_handler_flags_st {
+	bool done;
+	bool refresh_required;
+	bool error;
+} minirl_key_handler_flags_st;
 
 struct minirl_state {
 	struct buffer *line_buf;
@@ -32,6 +37,8 @@ struct minirl_state {
 
 	cursor_st previous_cursor;
 	cursor_st previous_line_end;
+
+	minirl_key_handler_flags_st flags;
 };
 
 struct minirl_st

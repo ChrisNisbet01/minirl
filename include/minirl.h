@@ -11,6 +11,10 @@ extern "C" {
 
 typedef struct minirl_st minirl_st;
 
+typedef bool (*minirl_key_binding_handler_cb)(
+	minirl_st *minirl, char const *key, void *user_ctx);
+
+
 /*
  * Get the current pointer to the line buffer. Note that any changes made by
  * callbacks may result in this pointer becoming invalid, so it should be
@@ -51,18 +55,6 @@ minirl_display_matches(minirl_st * minirl, char * * matches);
 
 bool
 minirl_refresh_line(minirl_st * minirl);
-
-typedef struct minirl_key_handler_flags_st {
-	bool done;
-	bool refresh_required;
-	bool error;
-} minirl_key_handler_flags_st;
-
-typedef bool (*minirl_key_binding_handler_cb)(
-	minirl_st *minirl,
-	minirl_key_handler_flags_st *flags,
-    char const * key,
-    void * user_ctx);
 
 bool
 minirl_bind_key(
@@ -107,6 +99,16 @@ minirl_delete(minirl_st * minirl);
 
 int
 minirl_printf(minirl_st * const minirl, char const * const fmt, ...);
+
+void
+minirl_is_done(minirl_st * minirl);
+
+void
+minirl_requires_refresh(minirl_st *minirl);
+
+void
+minirl_had_error(minirl_st * minirl);
+
 
 #ifdef __cplusplus
 }
