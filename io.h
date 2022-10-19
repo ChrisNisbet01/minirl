@@ -17,11 +17,11 @@
 #endif
 
 #define io_write(fd, buf, n) \
-    TEMP_FAILURE_RETRY(write((fd), (buf), (n)))
+	TEMP_FAILURE_RETRY(write((fd), (buf), (n)))
 
 #define io_read(fd, buf, nbytes) \
-    TEMP_FAILURE_RETRY(read((fd), (buf), (nbytes)))
+	TEMP_FAILURE_RETRY(read((fd), (buf), (nbytes)))
 
 #define io_fcntl(fd, flags, ...) \
-    TEMP_FAILURE_RETRY(fcntl((fd), (flags), ##__VA_ARGS__))
+	TEMP_FAILURE_RETRY(fcntl((fd), (flags), ##__VA_ARGS__))
 

@@ -26,14 +26,14 @@ typedef struct minirl_key_handler_flags_st {
 struct minirl_state {
 	struct buffer *line_buf;
 
-	char const *prompt;	/* Prompt to display. */
-	size_t prompt_len;	/* Prompt length. */
-	size_t pos;		/* Current cursor position. */
-	size_t len;		/* Current edited line length. */
+	char const *prompt;     /* Prompt to display. */
+	size_t prompt_len;      /* Prompt length. */
+	size_t pos;             /* Current cursor position. */
+	size_t len;             /* Current edited line length. */
 
-	size_t terminal_width;	/* Number of columns in terminal. */
-	size_t max_rows;	/* Maximum num of rows used so far */
-	int history_index;	/* The history index we are currently editing. */
+	size_t terminal_width;  /* Number of columns in terminal. */
+	size_t max_rows;        /* Maximum num of rows used so far */
+	int history_index;      /* The history index we are currently editing. */
 
 	cursor_st previous_cursor;
 	cursor_st previous_line_end;
@@ -41,37 +41,31 @@ struct minirl_state {
 	minirl_key_handler_flags_st flags;
 };
 
-struct minirl_st
-{
-    struct
-    {
-        FILE * stream;
-        int fd;
-    } in;
-    struct
-    {
-        FILE * stream;
-        int fd;
-    } out;
+struct minirl_st {
+	struct {
+		FILE *stream;
+		int fd;
+	} in;
+	struct {
+		FILE *stream;
+		int fd;
+	} out;
 
-    bool is_a_tty;
-    bool in_raw_mode;
-    struct termios orig_termios;
-    struct minirl_keymap * keymap;
-    struct minirl_state state;
+	bool is_a_tty;
+	bool in_raw_mode;
+	struct termios orig_termios;
+	struct minirl_keymap *keymap;
+	struct minirl_state state;
 
-    struct
-    {
-        bool mask_mode;
-        bool force_isatty;
-    } options;
+	struct {
+		bool mask_mode;
+		bool force_isatty;
+	} options;
 
-    struct
-    {
-        size_t max_len;
-        size_t current_len;
-        char ** history;
-    } history;
+	struct {
+		size_t max_len;
+		size_t current_len;
+		char **history;
+	} history;
 };
-
 

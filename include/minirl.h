@@ -1,7 +1,8 @@
 #pragma once
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 #include <stdbool.h>
@@ -21,93 +22,93 @@ typedef bool (*minirl_key_binding_handler_cb)(
  * reobtained after any modification.
  */
 char *
-minirl_line_get(minirl_st * minirl);
+minirl_line_get(minirl_st *minirl);
 
 size_t
-minirl_point_get(minirl_st * minirl);
+minirl_point_get(minirl_st *minirl);
 
 size_t
-minirl_end_get(minirl_st * minirl);
+minirl_end_get(minirl_st *minirl);
 
 void
-minirl_point_set(minirl_st * minirl, size_t new_point);
+minirl_point_set(minirl_st *minirl, size_t new_point);
 
 void
-minirl_delete_text(minirl_st * minirl, size_t start, size_t end);
+minirl_delete_text(minirl_st *minirl, size_t start, size_t end);
 
 bool
-minirl_insert_text_len(minirl_st * minirl, char const * text, size_t delta);
+minirl_insert_text_len(minirl_st *minirl, char const *text, size_t delta);
 
 bool
-minirl_insert_text(minirl_st * minirl, char const * text);
+minirl_insert_text(minirl_st *minirl, char const *text);
 
 int
-minirl_terminal_width(minirl_st * minirl);
+minirl_terminal_width(minirl_st *minirl);
 
 bool minirl_complete(
-    minirl_st * minirl,
-    unsigned start,
-    char * * matches,
-    bool allow_prefix);
+	minirl_st *minirl,
+	unsigned start,
+	char **matches,
+	bool allow_prefix);
 
 void
-minirl_display_matches(minirl_st * minirl, char * * matches);
+minirl_display_matches(minirl_st *minirl, char **matches);
 
 bool
-minirl_refresh_line(minirl_st * minirl);
+minirl_refresh_line(minirl_st *minirl);
 
 bool
 minirl_bind_key(
-    minirl_st * minirl,
-    uint8_t key,
-    minirl_key_binding_handler_cb handler,
-    void * user_ctx);
+	minirl_st *minirl,
+	uint8_t key,
+	minirl_key_binding_handler_cb handler,
+	void *user_ctx);
 
 bool
 minirl_bind_keyseq(
-    minirl_st * minirl,
-    const char * seq,
-    minirl_key_binding_handler_cb handler,
-    void * context);
+	minirl_st *minirl,
+	const char *seq,
+	minirl_key_binding_handler_cb handler,
+	void *context);
 
 char *
-minirl_readline(minirl_st * minirl, char const * prompt);
+minirl_readline(minirl_st *minirl, char const *prompt);
 
 void
 minirl_free(void *ptr);
 
 int
-minirl_history_add(minirl_st * minirl, char const * line);
+minirl_history_add(minirl_st *minirl, char const *line);
 
 int
-minirl_history_set_max_len(minirl_st * minirl, size_t len);
+minirl_history_set_max_len(minirl_st *minirl, size_t len);
 
 void
-minirl_clear_screen(minirl_st * minirl);
+minirl_clear_screen(minirl_st *minirl);
 
 void
-minirl_set_mask_mode(minirl_st * minirl, bool enable);
+minirl_set_mask_mode(minirl_st *minirl, bool enable);
 
 void
 minirl_force_isatty(minirl_st * const minirl);
 
 struct minirl_st *
-minirl_new(FILE * in_stream, FILE * out_stream);
+minirl_new(FILE *in_stream, FILE *out_stream);
 
 void
-minirl_delete(minirl_st * minirl);
+minirl_delete(minirl_st *minirl);
 
 int
 minirl_printf(minirl_st * const minirl, char const * const fmt, ...);
 
 void
-minirl_is_done(minirl_st * minirl);
+minirl_is_done(minirl_st *minirl);
 
 void
 minirl_requires_refresh(minirl_st *minirl);
 
 void
-minirl_had_error(minirl_st * minirl);
+minirl_had_error(minirl_st *minirl);
 
 
 #ifdef __cplusplus
