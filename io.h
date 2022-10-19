@@ -1,7 +1,9 @@
 #pragma once
 
 
+#include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <unistd.h>
 
 #ifndef TEMP_FAILURE_RETRY
@@ -24,4 +26,10 @@
 
 #define io_fcntl(fd, flags, ...) \
 	TEMP_FAILURE_RETRY(fcntl((fd), (flags), ##__VA_ARGS__))
+
+bool
+fd_is_readable(int fd, size_t timeout_ms);
+
+int
+read_byte_with_timeout(int fd, uint8_t * byte, size_t timeout_ms);
 

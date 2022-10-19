@@ -14,6 +14,7 @@ add_library(minirl SHARED
   include/minirl.h 
   buffer.c
   buffer.h
+  io.c
   io.h
   private.h
   key_binding.c

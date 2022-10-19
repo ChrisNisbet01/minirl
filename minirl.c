@@ -24,7 +24,6 @@
 #define DEFAULT_TERMINAL_WIDTH 80
 #define ESCAPESTR "\x1b"
 
-static char const * const unsupported_term[] = { "dumb", "cons25", "emacs", NULL };
 
 enum KEY_ACTION
 {
@@ -46,6 +45,51 @@ minirl_printf(minirl_st * const minirl, char const * const fmt, ...)
 	va_end(args);
 
 	return len;
+}
+
+static bool
+move_cursor_right(struct minirl_state * const l)
+{
+	if (l->pos != l->len) {
+		l->pos++;
+		return true;
+	}
+
+	return true;
+}
+
+static bool
+move_cursor_left(struct minirl_state * const l)
+{
+	if (l->pos > 0) {
+		l->pos--;
+		return true;
+	}
+
+	return false;
+}
+
+static bool
+move_cursor_home(struct minirl_state * const l)
+{
+	if (l->pos != 0) {
+		l->pos = 0;
+		return true;
+	}
+
+	return false;
+}
+
+/* Move cursor to the end of the line. */
+static bool
+move_cursor_end(struct minirl_state * const l)
+{
+	if (l->pos != l->len) {
+		l->pos = l->len;
+		return true;
+	}
+
+	return false;
 }
 
 char *
@@ -86,24 +130,6 @@ void
 minirl_force_isatty(minirl_st * const minirl)
 {
 	minirl->options.force_isatty = true;
-}
-
-/* Return true if the terminal name is in the list of terminals we know are
- * not able to understand basic escape sequences. */
-static int
-is_unsupported_terminal(void)
-{
-	char *term = getenv("TERM");
-
-	if (term == NULL) {
-		return 0;
-	}
-	for (size_t j = 0; unsupported_term[j] != NULL; j++) {
-		if (strcasecmp(term, unsupported_term[j]) == 0) {
-			return 1;
-		}
-	}
-	return 0;
 }
 
 /* Raw mode: 1960 magic shit. */
@@ -411,18 +437,6 @@ minirl_edit_insert(minirl_st * const minirl, char const c)
 	return 0;
 }
 
-/* Move cursor to the end of the line. */
-static bool
-move_cursor_end(struct minirl_state * const l)
-{
-	if (l->pos != l->len) {
-		l->pos = l->len;
-		return true;
-	}
-
-	return false;
-}
-
 /*
  * Substitute the currently edited line with the next or previous history
  * entry as specified by 'dir'.
@@ -553,39 +567,6 @@ delete_whole_line(struct minirl_state * const l)
 		l->pos = 0;
 		l->len = 0;
 
-		return true;
-	}
-
-	return false;
-}
-
-static bool
-move_cursor_right(struct minirl_state * const l)
-{
-	if (l->pos != l->len) {
-		l->pos++;
-		return true;
-	}
-
-	return true;
-}
-
-static bool
-move_cursor_left(struct minirl_state * const l)
-{
-	if (l->pos > 0) {
-		l->pos--;
-		return true;
-	}
-
-	return false;
-}
-
-static bool
-move_cursor_home(struct minirl_state * const l)
-{
-	if (l->pos != 0) {
-		l->pos = 0;
 		return true;
 	}
 
@@ -848,40 +829,6 @@ ctrl_w_handler(minirl_st * const minirl, char const *key, void * const user_ctx)
 	return true;
 }
 
-static bool
-fd_is_readable(int const fd, size_t const timeout_ms)
-{
-	sigset_t sigmask;
-	int res;
-
-	sigemptyset(&sigmask);
-
-	do {
-		struct timespec const timeout =
-		{
-			.tv_sec = 0,
-			.tv_nsec = timeout_ms * 1000000
-		};
-		fd_set rfds;
-
-		FD_ZERO(&rfds);
-		FD_SET(fd, &rfds);
-
-		res = pselect(fd + 1, &rfds, NULL, NULL, &timeout, &sigmask);
-	}
-	while (res == -1 && errno == EINTR);
-
-	bool const is_readable = res > 0;
-
-	return is_readable;
-}
-
-static int
-read_byte_with_timeout(int const fd, uint8_t * const byte, size_t const timeout_ms)
-{
-	return fd_is_readable(fd, timeout_ms) ? io_read(fd, byte, 1) : -1;
-}
-
 static void
 key_handler_lookup(
 	minirl_st * const minirl,
@@ -1096,39 +1043,14 @@ minirl_readline(minirl_st * const minirl, char const *prompt)
 		/* Not a tty: read from file / pipe. In this mode we don't want any
 		 * limit to the line size, so we call a function to handle that. */
 		line = minirl_no_tty(minirl);
-	} else if (!minirl->options.force_isatty && is_unsupported_terminal()) {
-		size_t len;
-		struct buffer line_buf;
-
-		buffer_init(&line_buf, MINIRL_MAX_LINE);
-
-		fprintf(minirl->out.stream, "%s", prompt);
-		fflush(minirl->out.stream);
-
-		if (fgets(line_buf.b, line_buf.capacity, minirl->in.stream) == NULL) {
-			buffer_clear(&line_buf);
-			line = NULL;
-			goto done;
-		}
-		len = strlen(line_buf.b);
-		while (len && (line_buf.b[len - 1] == '\n' || line_buf.b[len - 1] == '\r')) {
-			len--;
-			line_buf.b[len] = '\0';
-		}
-		/*
-		 * Ensure that the buffer is freed _after_ the buffer is duplicated so
-		 * the memory being duplicated is still valid.
-		 */
-		line = strdup(line_buf.b);
-		buffer_clear(&line_buf);
 	} else {
 		struct buffer line_buf;
 
 		buffer_init(&line_buf, 0);
 
-		int const count = minirl_raw(minirl, &line_buf, prompt);
+		int const line_length = minirl_raw(minirl, &line_buf, prompt);
 
-		if (count == -1) {
+		if (line_length == -1) {
 			line = NULL;
 		} else {
 			line = strdup(line_buf.b);
@@ -1137,7 +1059,6 @@ minirl_readline(minirl_st * const minirl, char const *prompt)
 		buffer_clear(&line_buf);
 	}
 
-done:
 	if (line == NULL || line[0] == '\0') {
 		/*
 		 * Without this, when empty lines (e.g. after CTRL-C) are returned,
@@ -1146,6 +1067,7 @@ done:
 		int const res = io_write(minirl->out.fd, "\n", 1);
 		(void)res;
 	}
+
 	return line;
 }
 
