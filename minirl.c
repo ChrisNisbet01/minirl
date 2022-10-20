@@ -1240,13 +1240,14 @@ minirl_history_set_max_len(minirl_st * const minirl, size_t const len)
 void
 minirl_delete_text(minirl_st * const minirl, size_t const start, size_t const end)
 {
-	if (end == start) {
+	struct minirl_state * const ls = &minirl->state;
+	unsigned const delta = end - start;
+
+	if (delta == 0) {
 		return;
 	}
-	struct minirl_state * const ls = &minirl->state;
 
-	/* move any text which is left, including terminator */
-	unsigned const delta = end - start;
+	/* Move any text which is left, including the terminator */
 	char * const line = minirl_line_get(minirl);
 	memmove(&line[start], &line[start + delta], ls->len + 1 - end);
 	ls->len -= delta;
@@ -1259,6 +1260,8 @@ minirl_delete_text(minirl_st * const minirl, size_t const start, size_t const en
 		/* move the insertion point to the start */
 		ls->pos = start;
 	}
+
+	minirl_requires_refresh(minirl);
 }
 
 /*
