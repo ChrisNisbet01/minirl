@@ -326,10 +326,10 @@ minirl_refresh_line(minirl_st * const minirl)
 	 * To do so start by going to the last row.
 	 */
 	if (l->max_rows > 1) {
-		unsigned down_count = l->max_rows - l->previous_cursor.row - 1;
-		if (down_count > 0) {
+		unsigned const num_down = l->max_rows - l->previous_cursor.row - 1;
+		if (num_down > 0) {
 			/* Move down. to last row. */
-			buffer_snprintf(&ab, seq, sizeof seq, "\x1b[%uB", down_count);
+			buffer_snprintf(&ab, seq, sizeof seq, "\x1b[%uB", num_down);
 		}
 
 		/* Now for every row clear it, then go up. */
