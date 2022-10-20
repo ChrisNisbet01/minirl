@@ -298,14 +298,14 @@ minirl_refresh_cursor(minirl_st * const minirl)
  * cursor position, and number of columns of the terminal.
  */
 static bool
-refresh_line_clear_rows(minirl_st * const minirl, bool const row_clear_required)
+minirl_refresh_line(minirl_st * const minirl)
 {
 	bool success = true;
 	struct minirl_state * const l = &minirl->state;
-	size_t const old_cols = l->terminal_width;
+	size_t const prompt_len = strlen(l->prompt);
+
 	l->terminal_width = minirl_terminal_width(minirl);
 
-	size_t const prompt_len = strlen(l->prompt);
 	/* Calculate row and column of end of line. */
 	cursor_st line_end_cursor;
 	cursor_calculate_position(
@@ -320,38 +320,31 @@ refresh_line_clear_rows(minirl_st * const minirl, bool const row_clear_required)
 	struct buffer ab;
 
 	buffer_init(&ab, 20);
+
 	/*
 	 * First step: clear all the lines used before.
 	 * To do so start by going to the last row.
-	 * This isn't necessary if there have been some completions printed just
-	 * before this function is called, because the cursor will already be at
-	 * the start of a line. In that case, row_clear_required will be false.
-	 *
-	 * A full update is also required if the terminal width has changed.
 	 */
-	bool const clear_rows = (old_cols != l->terminal_width) || row_clear_required;
-	if (clear_rows) {
-		if (l->max_rows > 1) {
-			unsigned down_count = l->max_rows - l->previous_cursor.row - 1;
-			if (down_count > 0) {
-				/* Move down. to last row. */
-				buffer_snprintf(&ab, seq, sizeof seq, "\x1b[%uB", down_count);
-			}
-
-			/* Now for every row clear it, then go up. */
-			for (size_t j = 0; j < l->max_rows - 1; j++) {
-				buffer_snprintf(&ab, seq, sizeof seq, "\r\x1b[0K"); /* Clear the row. */
-				buffer_snprintf(&ab, seq, sizeof seq, "\x1bM");     /* Go up one row. */
-			}
+	if (l->max_rows > 1) {
+		unsigned down_count = l->max_rows - l->previous_cursor.row - 1;
+		if (down_count > 0) {
+			/* Move down. to last row. */
+			buffer_snprintf(&ab, seq, sizeof seq, "\x1b[%uB", down_count);
 		}
 
-		/*
-		 * Go to beginning of the line and clear to the end.
-		 * This means the prompt will also be cleared, so will need to be
-		 * output afresh.
-		 */
-		buffer_snprintf(&ab, seq, sizeof seq, "\r\x1b[0K");
+		/* Now for every row clear it, then go up. */
+		for (size_t j = 0; j < l->max_rows - 1; j++) {
+			buffer_snprintf(&ab, seq, sizeof seq, "\r\x1b[0K"); /* Clear the row. */
+			buffer_snprintf(&ab, seq, sizeof seq, "\x1bM");     /* Go up one row. */
+		}
 	}
+
+	/*
+	 * Go to beginning of the line and clear to the end.
+	 * This means the prompt will also be cleared, so will need to be
+	 * output afresh.
+	 */
+	buffer_snprintf(&ab, seq, sizeof seq, "\r\x1b[0K");
 
 	/* Write the prompt and the current buffer content */
 	buffer_append(&ab, l->prompt, strlen(l->prompt));
@@ -365,9 +358,10 @@ refresh_line_clear_rows(minirl_st * const minirl, bool const row_clear_required)
 
 	/*
 	 * If we are at the very end of the screen with our cursor, we need to
-	 * emit a newline and move the cursor to the first column.
-	 * If the last character on that row is a '\n' there is no need to emit the
-	 * newline because that character already moved the cursor.
+	 * emit a newline and move the cursor to the first column of the next
+	 * line.
+	 * If the last character on the row is a '\n' there is no need to emit
+	 * the newline because that character already moved the cursor.
 	 */
 	if (l->pos > 0
 	    && l->pos == l->len
@@ -383,14 +377,14 @@ refresh_line_clear_rows(minirl_st * const minirl, bool const row_clear_required)
 	 */
 
 	/* Go up till we reach the expected positon. */
-	if (line_end_cursor.row - current_cursor.row > 0) {
-		buffer_snprintf(&ab,
-				seq, sizeof seq,
-				"\x1b[%dA", line_end_cursor.row - current_cursor.row);
+	if (line_end_cursor.row > current_cursor.row) {
+		unsigned const num_up = line_end_cursor.row - current_cursor.row;
+
+		buffer_snprintf(&ab, seq, sizeof seq, "\x1b[%dA", num_up);
 	}
 
 	/* Set column. */
-	if (current_cursor.col != 0) {
+	if (current_cursor.col > 0) {
 		buffer_snprintf(&ab, seq, sizeof seq, "\r\x1b[%dC", current_cursor.col);
 	} else {
 		buffer_append(&ab, "\r", strlen("\r"));
@@ -411,17 +405,10 @@ refresh_line_clear_rows(minirl_st * const minirl, bool const row_clear_required)
 	if (io_write(minirl->out.fd, ab.b, ab.len) == -1) {
 		success = false;
 	}
+
 	buffer_clear(&ab);
 
 	return success;
-}
-
-static bool
-minirl_refresh_line(minirl_st * const minirl)
-{
-	bool const clear_rows = true;
-
-	return refresh_line_clear_rows(minirl, clear_rows);
 }
 
 /*
@@ -790,9 +777,7 @@ static bool
 ctrl_c_handler(minirl_st * const minirl, char const *key, void * const user_ctx)
 {
 	/* Clear the whole line and indicate that processing is done. */
-	if (delete_whole_line(&minirl->state)) {
-		minirl_requires_refresh(minirl);
-	}
+	delete_whole_line(&minirl->state);
 	minirl_is_done(minirl);
 
 	return true;
@@ -998,16 +983,18 @@ static int minirl_edit(
 			/* TODO: Should pass the complete key sequence. */
 			char key_str[2] = { c, '\0' };
 
-			memset(&l->flags, 0, sizeof(l->flags));
+			l->flags = (minirl_key_handler_flags_st){0};
+
 			bool const res = handler(minirl, key_str, user_ctx);
-			(void)res;
+			(void)res; //* TODO: Treat false as an error?
 
 			if (l->flags.error) {
 				return -1;
 			}
+
 			if (l->flags.refresh_required) {
 				minirl_refresh_line(minirl);
-			} else if (l->flags.cursor_refresh_required) {
+			} else if (!l->flags.done && l->flags.cursor_refresh_required) {
 				minirl_refresh_cursor(minirl);
 			}
 
@@ -1401,11 +1388,12 @@ minirl_complete(
 		/*
 		 * The is no need to clear the terminal of the previous command
 		 * because the current line will be printed afresh.
+		 * Setting max_rows to 1 means that the old display won't get
+		 * cleared.
 		 */
-		bool const clear_rows = false;
-
 		minirl_display_matches(minirl, matches);
-		refresh_line_clear_rows(minirl, clear_rows);
+		minirl_requires_refresh(minirl);
+		minirl->state.max_rows = 1;
 	}
 
 done:
