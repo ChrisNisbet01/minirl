@@ -384,11 +384,7 @@ minirl_refresh_line(minirl_st * const minirl)
 	}
 
 	/* Set column. */
-	if (current_cursor.col > 0) {
-		buffer_snprintf(&ab, seq, sizeof seq, "\r\x1b[%dC", current_cursor.col);
-	} else {
-		buffer_append(&ab, "\r", strlen("\r"));
-	}
+	buffer_snprintf(&ab, seq, sizeof seq, "\x1b[%dG", current_cursor.col + 1);
 
 	l->previous_cursor = current_cursor;
 	l->previous_line_end = line_end_cursor;
