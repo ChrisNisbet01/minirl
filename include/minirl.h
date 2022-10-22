@@ -84,9 +84,6 @@ void
 minirl_clear_screen(minirl_st *minirl);
 
 void
-minirl_set_mask_mode(minirl_st *minirl, bool enable);
-
-void
 minirl_force_isatty(minirl_st *minirl);
 
 struct minirl_st *

@@ -120,16 +120,6 @@ minirl_point_set(minirl_st * const minirl, size_t const new_point)
 	}
 }
 
-/* Enable or disable "mask mode". When it is enabled, instead of the input that
- * the user is typing, the terminal will just display a corresponding
- * number of asterisks, like "****". This is useful for passwords and other
- * secrets that should not be displayed. */
-void
-minirl_set_mask_mode(minirl_st * const minirl, bool const enable)
-{
-	minirl->options.mask_mode = enable;
-}
-
 void
 minirl_force_isatty(minirl_st * const minirl)
 {
@@ -206,8 +196,15 @@ minirl_clear_screen(minirl_st * const minirl)
 }
 
 static void
-cursor_add_ch(cursor_st * const cursor, char const ch, size_t const terminal_width)
+cursor_add_ch(
+	cursor_st * const cursor,
+	char const ch,
+	size_t const terminal_width,
+	bool const echo_is_enabled)
 {
+	if (!echo_is_enabled) {
+		return;
+	}
 	cursor->col++;
 	/* TODO: Support '\t' <TAB> characters. 8 chars per TAB. */
 	if (cursor->col == terminal_width || ch == '\n') {
@@ -221,7 +218,8 @@ cursor_calculate_position(
 	size_t const terminal_width,
 	size_t const prompt_len,
 	char const * const line,
-	size_t const max_chars,
+	size_t const max_chars_in,
+	size_t echo_is_enabled,
 	cursor_st * const cursor_out)
 {
 	/* Assume no newlines in the prompt. */
@@ -230,11 +228,12 @@ cursor_calculate_position(
 		.col = prompt_len % terminal_width
 	};
 	size_t char_count = 0;
+	size_t max_chars = echo_is_enabled ? max_chars_in : 0;
 
 	for (char const *pch = line;
 	     *pch != '\0' && char_count < max_chars;
 	     pch++, char_count++) {
-		cursor_add_ch(&cursor, *pch, terminal_width);
+		cursor_add_ch(&cursor, *pch, terminal_width, echo_is_enabled);
 	}
 	*cursor_out = cursor;
 };
@@ -244,11 +243,17 @@ minirl_refresh_cursor(minirl_st * const minirl)
 {
 	bool success = true;
 	struct minirl_state * const l = &minirl->state;
+	bool const echo_is_enabled =
+		!minirl->options.echo.disable || minirl->options.echo.ch != '\0';
 
 	/* Calculate row and column of current cursor. */
 	cursor_st current_cursor;
-	cursor_calculate_position(
-		l->terminal_width, l->prompt_len, l->line_buf->b, l->pos, &current_cursor);
+	cursor_calculate_position(l->terminal_width,
+							  l->prompt_len,
+							  l->line_buf->b,
+							  l->pos,
+							  echo_is_enabled,
+							  &current_cursor);
 
 	/* Check that the cursor has actually moved. */
 	if (current_cursor.row == l->previous_cursor.row
@@ -303,18 +308,28 @@ minirl_refresh_line(minirl_st * const minirl)
 	bool success = true;
 	struct minirl_state * const l = &minirl->state;
 	size_t const prompt_len = strlen(l->prompt);
+	bool const echo_is_enabled =
+		!minirl->options.echo.disable || minirl->options.echo.ch != '\0';
 
 	l->terminal_width = minirl_terminal_width(minirl);
 
 	/* Calculate row and column of end of line. */
 	cursor_st line_end_cursor;
-	cursor_calculate_position(
-		l->terminal_width, prompt_len, l->line_buf->b, l->len, &line_end_cursor);
+	cursor_calculate_position(l->terminal_width,
+							  prompt_len,
+							  l->line_buf->b,
+							  l->len,
+							  echo_is_enabled,
+							  &line_end_cursor);
 
 	/* Calculate row and column of end of cursor. */
 	cursor_st current_cursor;
-	cursor_calculate_position(
-		l->terminal_width, prompt_len, l->line_buf->b, l->pos, &current_cursor);
+	cursor_calculate_position(l->terminal_width,
+							  prompt_len,
+							  l->line_buf->b,
+							  l->pos,
+							  echo_is_enabled,
+							  &current_cursor);
 
 	char seq[64];
 	struct buffer ab;
@@ -348,9 +363,11 @@ minirl_refresh_line(minirl_st * const minirl)
 
 	/* Write the prompt and the current buffer content */
 	buffer_append(&ab, l->prompt, strlen(l->prompt));
-	if (minirl->options.mask_mode) {
-		for (size_t i = 0; i < l->len; i++) {
-			buffer_append(&ab, "*", 1);
+	if (minirl->options.echo.disable) {
+		if (minirl->options.echo.ch != '\0') {
+			for (size_t i = 0; i < l->len; i++) {
+				buffer_append(&ab, &minirl->options.echo.ch, 1);
+			}
 		}
 	} else {
 		buffer_append(&ab, l->line_buf->b, l->len);
@@ -438,9 +455,11 @@ minirl_edit_insert(minirl_st * const minirl, char const c)
 	bool require_full_refresh = true;
 
 	if (l->len == l->pos) { /* Cursor is at the end of the line. */
+		bool const echo_is_enabled =
+			!minirl->options.echo.disable || minirl->options.echo.ch != '\0';
 		cursor_st new_line_end = l->previous_cursor;
 
-		cursor_add_ch(&new_line_end, c, l->terminal_width);
+		cursor_add_ch(&new_line_end, c, l->terminal_width, echo_is_enabled);
 		/*
 		 * As long as the cursor remains on the same row as before the
 		 * current character was added, and hasn't filled the terminal
@@ -467,11 +486,14 @@ minirl_edit_insert(minirl_st * const minirl, char const c)
 	if (require_full_refresh) {
 		minirl_requires_refresh(minirl);
 	} else {
-		char const d = minirl->options.mask_mode ? '*' : c;
+		char const d = minirl->options.echo.disable
+			? minirl->options.echo.ch : c;
 
-		if (io_write(minirl->out.fd, &d, 1) == -1) {
-			minirl_had_error(minirl);
-			return -1;
+		if (d != '\0') {
+			if (io_write(minirl->out.fd, &d, 1) == -1) {
+				minirl_had_error(minirl);
+				return -1;
+			}
 		}
 	}
 
@@ -950,6 +972,7 @@ static int minirl_edit(
 				  l->prompt_len,
 				  l->line_buf->b,
 				  0,
+				  true,
 				  &l->previous_cursor);
 	l->previous_line_end = l->previous_cursor;
 
@@ -1519,12 +1542,12 @@ minirl_reset_line_state(minirl_st * const minirl)
 void
 minirl_enable_echo(minirl_st * const minirl)
 {
-	minirl->options.disable_echo = false;
+	minirl->options.echo.disable = false;
 }
 
 void
 minirl_disable_echo(minirl_st * const minirl, char const echo_char)
 {
-	minirl->options.disable_echo = true;
-	minirl->options.echo_char = echo_char;
+	minirl->options.echo.disable = true;
+	minirl->options.echo.ch = echo_char;
 }
