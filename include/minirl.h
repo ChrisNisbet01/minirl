@@ -113,6 +113,12 @@ minirl_had_error(minirl_st *minirl);
 void
 minirl_reset_line_state(minirl_st *minirl);
 
+void
+minirl_enable_echo(minirl_st *minirl);
+
+void
+minirl_disable_echo(minirl_st *minirl, char echo_char);
+
 #ifdef __cplusplus
 }
 #endif

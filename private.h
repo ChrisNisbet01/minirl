@@ -61,6 +61,8 @@ struct minirl_st {
 	struct {
 		bool mask_mode;
 		bool force_isatty;
+		bool disable_echo;
+		char echo_char;
 	} options;
 
 	struct {

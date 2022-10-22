@@ -1516,3 +1516,15 @@ minirl_reset_line_state(minirl_st * const minirl)
 	minirl_requires_refresh(minirl);
 }
 
+void
+minirl_enable_echo(minirl_st * const minirl)
+{
+	minirl->options.disable_echo = false;
+}
+
+void
+minirl_disable_echo(minirl_st * const minirl, char const echo_char)
+{
+	minirl->options.disable_echo = true;
+	minirl->options.echo_char = echo_char;
+}
