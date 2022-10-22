@@ -188,11 +188,12 @@ minirl_terminal_width(minirl_st * const minirl)
 
 /* Clear the screen. Used to handle ctrl+l */
 void
-minirl_clear_screen(minirl_st * const minirl)
+minirl_screen_clear(minirl_st * const minirl)
 {
 	if (io_write(minirl->out.fd, "\x1b[H\x1b[2J", 7) <= 0) {
 		/* nothing to do, just to avoid warning. */
 	}
+	minirl_requires_refresh(minirl);
 }
 
 static void
@@ -867,8 +868,7 @@ static bool
 ctrl_l_handler(minirl_st * const minirl, char const *key, void * const user_ctx)
 {
 	/* Clear the screen and move the cursor to EOL. */
-	minirl_clear_screen(minirl);
-	minirl_requires_refresh(minirl);
+	minirl_screen_clear(minirl);
 
 	return true;
 }
@@ -1140,7 +1140,7 @@ minirl_readline(minirl_st * const minirl, char const *prompt)
  * allocator.
  */
 void
-minirl_free(void * const ptr)
+minirl_line_free(void * const ptr)
 {
 	free(ptr);
 }
@@ -1254,7 +1254,7 @@ minirl_history_set_max_len(minirl_st * const minirl, size_t const len)
 }
 
 void
-minirl_delete_text(minirl_st * const minirl, size_t const start, size_t const end)
+minirl_text_delete(minirl_st * const minirl, size_t const start, size_t const end)
 {
 	struct minirl_state * const ls = &minirl->state;
 	unsigned const delta = end - start;
@@ -1284,12 +1284,12 @@ minirl_delete_text(minirl_st * const minirl, size_t const start, size_t const en
  * Insert text into the line at the current cursor position.
  */
 bool
-minirl_insert_text_len(
+minirl_text_len_insert(
 	minirl_st * const minirl,
 	char const * const text,
-	size_t const count)
+	size_t const length)
 {
-	for (size_t i = 0; i < count; i++) {
+	for (size_t i = 0; i < length; i++) {
 		minirl_edit_insert(minirl, text[i]);
 	}
 
@@ -1297,11 +1297,11 @@ minirl_insert_text_len(
 }
 
 bool
-minirl_insert_text(
+minirl_text_insert(
 	minirl_st * const minirl,
 	char const * const text)
 {
-	return minirl_insert_text_len(minirl, text, strlen(text));
+	return minirl_text_len_insert(minirl, text, strlen(text));
 }
 
 void
@@ -1309,7 +1309,7 @@ minirl_display_matches(minirl_st * const minirl, char ** const matches)
 {
 	size_t max;
 
-	/* Find maximum completion length */
+	/* Find maximum completion length. */
 	max = 0;
 	for (char **m = matches; *m != NULL; m++) {
 		size_t const size = strlen(*m);
@@ -1319,10 +1319,10 @@ minirl_display_matches(minirl_st * const minirl, char ** const matches)
 		}
 	}
 
-	/* allow for a space between words */
+	/* Allow for a space between words. */
 	size_t const num_cols = minirl_terminal_width(minirl) / (max + 1);
 
-	/* print out a table of completions */
+	/* Print out a table of completions. */
 	fprintf(minirl->out.stream, "\r\n");
 	for (char **m = matches; *m != NULL;) {
 		for (size_t c = 0; c < num_cols && *m; c++, m++) {
@@ -1347,7 +1347,7 @@ minirl_complete(
 		return false;
 	}
 
-	/* identify common prefix */
+	/* Identify a common prefix. */
 	unsigned len = strlen(matches[0]);
 	prefix = true;
 	for (size_t i = 1; matches[i] != NULL; i++) {
@@ -1378,7 +1378,7 @@ minirl_complete(
 	/* Insert the rest of the common prefix */
 
 	if (len > 0) {
-		if (!minirl_insert_text_len(minirl, &matches[0][start_from], len)) {
+		if (!minirl_text_len_insert(minirl, &matches[0][start_from], len)) {
 			return false;
 		}
 		did_some_completion = true;
@@ -1392,13 +1392,13 @@ minirl_complete(
 		goto done;
 	}
 
-	/* is the prefix valid? */
+	/* Is the prefix valid? */
 	if (prefix && allow_prefix) {
 		res = true;
 		goto done;
 	}
 
-	/* display matches if no progress was made */
+	/* Display matches if no progress was made */
 	if (!did_some_completion) {
 		/*
 		 * The is no need to clear the terminal of the previous command
@@ -1407,7 +1407,7 @@ minirl_complete(
 		 * cleared.
 		 */
 		minirl_display_matches(minirl, matches);
-		minirl_reset_line_state(minirl);
+		minirl_line_state_reset(minirl);
 	}
 
 done:
@@ -1453,16 +1453,16 @@ minirl_new(FILE * const in_stream, FILE * const out_stream)
 	minirl_bind_key(minirl, ENTER, enter_handler, NULL);
 	minirl_bind_key(minirl, BACKSPACE, backspace_handler, NULL);
 
-	minirl_bind_keyseq(minirl, ESCAPESTR "[2~", null_handler, NULL); /* Insert. */
-	minirl_bind_keyseq(minirl, ESCAPESTR "[3~", delete_handler, NULL);
-	minirl_bind_keyseq(minirl, ESCAPESTR "[A", up_handler, NULL);
-	minirl_bind_keyseq(minirl, ESCAPESTR "[B", down_handler, NULL);
-	minirl_bind_keyseq(minirl, ESCAPESTR "[C", right_handler, NULL);
-	minirl_bind_keyseq(minirl, ESCAPESTR "[D", left_handler, NULL);
-	minirl_bind_keyseq(minirl, ESCAPESTR "[H", home_handler, NULL);
-	minirl_bind_keyseq(minirl, ESCAPESTR "[F", end_handler, NULL);
-	minirl_bind_keyseq(minirl, ESCAPESTR "OH", home_handler, NULL);
-	minirl_bind_keyseq(minirl, ESCAPESTR "OF", end_handler, NULL);
+	minirl_bind_key_sequence(minirl, ESCAPESTR "[2~", null_handler, NULL); /* Insert. */
+	minirl_bind_key_sequence(minirl, ESCAPESTR "[3~", delete_handler, NULL);
+	minirl_bind_key_sequence(minirl, ESCAPESTR "[A", up_handler, NULL);
+	minirl_bind_key_sequence(minirl, ESCAPESTR "[B", down_handler, NULL);
+	minirl_bind_key_sequence(minirl, ESCAPESTR "[C", right_handler, NULL);
+	minirl_bind_key_sequence(minirl, ESCAPESTR "[D", left_handler, NULL);
+	minirl_bind_key_sequence(minirl, ESCAPESTR "[H", home_handler, NULL);
+	minirl_bind_key_sequence(minirl, ESCAPESTR "[F", end_handler, NULL);
+	minirl_bind_key_sequence(minirl, ESCAPESTR "OH", home_handler, NULL);
+	minirl_bind_key_sequence(minirl, ESCAPESTR "OF", end_handler, NULL);
 
 
 	minirl->in.stream = in_stream;
@@ -1524,7 +1524,7 @@ minirl_had_error(minirl_st * const minirl)
 }
 
 void
-minirl_reset_line_state(minirl_st * const minirl)
+minirl_line_state_reset(minirl_st * const minirl)
 {
 	struct minirl_state * const ls = &minirl->state;
 
@@ -1533,13 +1533,13 @@ minirl_reset_line_state(minirl_st * const minirl)
 }
 
 void
-minirl_enable_echo(minirl_st * const minirl)
+minirl_echo_enable(minirl_st * const minirl)
 {
 	minirl->options.echo.disable = false;
 }
 
 void
-minirl_disable_echo(minirl_st * const minirl, char const echo_char)
+minirl_echo_disable(minirl_st * const minirl, char const echo_char)
 {
 	minirl->options.echo.disable = true;
 	minirl->options.echo.ch = echo_char;

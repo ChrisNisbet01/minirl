@@ -28,7 +28,7 @@ minirl_keymap_free(struct minirl_keymap * const keymap)
 }
 
 bool
-minirl_bind_keyseq(
+minirl_bind_key_sequence(
 	minirl_st * const minirl,
 	const char * const seq_in,
 	minirl_key_binding_handler_cb const handler,
@@ -73,6 +73,6 @@ minirl_bind_key(
 {
 	char seq[2] = { key, '\0' };
 
-	return minirl_bind_keyseq(minirl, seq, handler, user_ctx);
+	return minirl_bind_key_sequence(minirl, seq, handler, user_ctx);
 }
 
