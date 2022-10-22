@@ -42,6 +42,11 @@ struct minirl_state {
 	minirl_key_handler_flags_st flags;
 };
 
+typedef struct echo_st {
+	bool disable;
+	char ch;
+} echo_st;
+
 struct minirl_st {
 	struct {
 		FILE *stream;
@@ -61,10 +66,7 @@ struct minirl_st {
 	struct {
 		bool mask_mode;
 		bool force_isatty;
-		struct {
-			bool disable;
-			char ch;
-		} echo;
+		echo_st echo;
 	} options;
 
 	struct {

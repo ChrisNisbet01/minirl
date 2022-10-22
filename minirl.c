@@ -200,14 +200,16 @@ cursor_add_ch(
 	cursor_st * const cursor,
 	char const ch,
 	size_t const terminal_width,
-	bool const echo_is_enabled)
+	echo_st const * const echo)
 {
-	if (!echo_is_enabled) {
+	char const echo_ch = echo->disable ? echo->ch : ch;
+
+	if (echo_ch == '\0') {
 		return;
 	}
 	cursor->col++;
 	/* TODO: Support '\t' <TAB> characters. 8 chars per TAB. */
-	if (cursor->col == terminal_width || ch == '\n') {
+	if (cursor->col == terminal_width || echo_ch == '\n') {
 		cursor->row++;
 		cursor->col = 0;
 	}
@@ -218,8 +220,8 @@ cursor_calculate_position(
 	size_t const terminal_width,
 	size_t const prompt_len,
 	char const * const line,
-	size_t const max_chars_in,
-	size_t echo_is_enabled,
+	size_t const max_chars,
+	echo_st const * const echo,
 	cursor_st * const cursor_out)
 {
 	/* Assume no newlines in the prompt. */
@@ -228,12 +230,11 @@ cursor_calculate_position(
 		.col = prompt_len % terminal_width
 	};
 	size_t char_count = 0;
-	size_t max_chars = echo_is_enabled ? max_chars_in : 0;
 
 	for (char const *pch = line;
 	     *pch != '\0' && char_count < max_chars;
 	     pch++, char_count++) {
-		cursor_add_ch(&cursor, *pch, terminal_width, echo_is_enabled);
+		cursor_add_ch(&cursor, *pch, terminal_width, echo);
 	}
 	*cursor_out = cursor;
 };
@@ -243,8 +244,6 @@ minirl_refresh_cursor(minirl_st * const minirl)
 {
 	bool success = true;
 	struct minirl_state * const l = &minirl->state;
-	bool const echo_is_enabled =
-		!minirl->options.echo.disable || minirl->options.echo.ch != '\0';
 
 	/* Calculate row and column of current cursor. */
 	cursor_st current_cursor;
@@ -252,7 +251,7 @@ minirl_refresh_cursor(minirl_st * const minirl)
 							  l->prompt_len,
 							  l->line_buf->b,
 							  l->pos,
-							  echo_is_enabled,
+							  &minirl->options.echo,
 							  &current_cursor);
 
 	/* Check that the cursor has actually moved. */
@@ -308,8 +307,6 @@ minirl_refresh_line(minirl_st * const minirl)
 	bool success = true;
 	struct minirl_state * const l = &minirl->state;
 	size_t const prompt_len = strlen(l->prompt);
-	bool const echo_is_enabled =
-		!minirl->options.echo.disable || minirl->options.echo.ch != '\0';
 
 	l->terminal_width = minirl_terminal_width(minirl);
 
@@ -319,7 +316,7 @@ minirl_refresh_line(minirl_st * const minirl)
 							  prompt_len,
 							  l->line_buf->b,
 							  l->len,
-							  echo_is_enabled,
+							  &minirl->options.echo,
 							  &line_end_cursor);
 
 	/* Calculate row and column of end of cursor. */
@@ -328,7 +325,7 @@ minirl_refresh_line(minirl_st * const minirl)
 							  prompt_len,
 							  l->line_buf->b,
 							  l->pos,
-							  echo_is_enabled,
+							  &minirl->options.echo,
 							  &current_cursor);
 
 	char seq[64];
@@ -452,14 +449,13 @@ minirl_edit_insert(minirl_st * const minirl, char const c)
 	l->pos++;
 	l->line_buf->b[l->len] = '\0';
 
+	char const d = minirl->options.echo.disable ? minirl->options.echo.ch : c;
 	bool require_full_refresh = true;
 
 	if (l->len == l->pos) { /* Cursor is at the end of the line. */
-		bool const echo_is_enabled =
-			!minirl->options.echo.disable || minirl->options.echo.ch != '\0';
 		cursor_st new_line_end = l->previous_cursor;
 
-		cursor_add_ch(&new_line_end, c, l->terminal_width, echo_is_enabled);
+		cursor_add_ch(&new_line_end, c, l->terminal_width, &minirl->options.echo);
 		/*
 		 * As long as the cursor remains on the same row as before the
 		 * current character was added, and hasn't filled the terminal
@@ -486,9 +482,6 @@ minirl_edit_insert(minirl_st * const minirl, char const c)
 	if (require_full_refresh) {
 		minirl_requires_refresh(minirl);
 	} else {
-		char const d = minirl->options.echo.disable
-			? minirl->options.echo.ch : c;
-
 		if (d != '\0') {
 			if (io_write(minirl->out.fd, &d, 1) == -1) {
 				minirl_had_error(minirl);
@@ -972,7 +965,7 @@ static int minirl_edit(
 				  l->prompt_len,
 				  l->line_buf->b,
 				  0,
-				  true,
+				  &minirl->options.echo,
 				  &l->previous_cursor);
 	l->previous_line_end = l->previous_cursor;
 
