@@ -87,7 +87,7 @@ void
 minirl_set_mask_mode(minirl_st *minirl, bool enable);
 
 void
-minirl_force_isatty(minirl_st * minirl);
+minirl_force_isatty(minirl_st *minirl);
 
 struct minirl_st *
 minirl_new(FILE *in_stream, FILE *out_stream);
@@ -96,7 +96,7 @@ void
 minirl_delete(minirl_st *minirl);
 
 int
-minirl_printf(minirl_st * minirl, char const * fmt, ...);
+minirl_printf(minirl_st *minirl, char const * fmt, ...);
 
 void
 minirl_is_done(minirl_st *minirl);
@@ -105,11 +105,13 @@ void
 minirl_requires_refresh(minirl_st *minirl);
 
 void
-minirl_requires_cursor_refresh(minirl_st * minirl);
+minirl_requires_cursor_refresh(minirl_st *minirl);
 
 void
 minirl_had_error(minirl_st *minirl);
 
+void
+minirl_reset_line_state(minirl_st *minirl);
 
 #ifdef __cplusplus
 }

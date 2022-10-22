@@ -1391,8 +1391,7 @@ minirl_complete(
 		 * cleared.
 		 */
 		minirl_display_matches(minirl, matches);
-		minirl_requires_refresh(minirl);
-		minirl->state.max_rows = 1;
+		minirl_reset_line_state(minirl);
 	}
 
 done:
@@ -1506,5 +1505,14 @@ void
 minirl_had_error(minirl_st * const minirl)
 {
 	minirl->state.flags.error = true;
+}
+
+void
+minirl_reset_line_state(minirl_st * const minirl)
+{
+	struct minirl_state * const ls = &minirl->state;
+
+	ls->max_rows = 1;
+	minirl_requires_refresh(minirl);
 }
 
