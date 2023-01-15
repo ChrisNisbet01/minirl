@@ -346,6 +346,24 @@ calculate_edit_cursor_position(
 }
 
 static void
+calculate_end_cursor_position(
+    cursor_st * const end_cursor,
+    internal_line_buffer_st const * const internal,
+    size_t const terminal_width)
+{
+	string_wrap(internal->buffer, internal->end, terminal_width, end_cursor);
+
+	if (end_cursor->col == terminal_width) {
+		/*
+		 * At EOL or the next character is too wide, so
+		 * move to the next line.
+		 */
+		end_cursor->row++;
+		end_cursor->col = 0;
+	}
+}
+
+static void
 cursor_calculate_positions(
 	minirl_state_st * const l,
 	internal_line_buffer_st const * const internal,
@@ -367,10 +385,8 @@ cursor_calculate_positions(
 	if (end_cursor != NULL) {
 		*end_cursor = prompt_cursor;
 		if (internal != NULL) {
-			string_wrap(internal->buffer,
-				    internal->end,
-				    l->terminal_width,
-				    end_cursor);
+			calculate_end_cursor_position(
+			    end_cursor, internal, l->terminal_width);
 		}
 	}
 }
@@ -562,10 +578,8 @@ minirl_refresh_line(minirl_st * const minirl)
 	 * If the last character on the row is a '\n' there is no need to emit
 	 * the newline because that character already moved the cursor.
 	 */
-	if (l->pos > 0
-	    && l->pos == l->len
-	    && current_cursor.row > 0
-	    && current_cursor.col == 0
+	if (line_end_cursor.row > 0
+	    && line_end_cursor.col == 0
 	    && internal.buffer[internal.end - 1] != '\n') {
 		buffer_append(&ab, "\n\r", strlen("\n\r"));
 	}
