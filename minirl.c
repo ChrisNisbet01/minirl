@@ -447,6 +447,17 @@ minirl_refresh_cursor(minirl_st * const minirl)
 		goto done;
 	}
 
+	/*
+	 * A full refresh may be still required if the cursor is on a row that
+	 * hasn't been written to yet. This can happen if a row is completely
+	 * full and the cursor is moved to the end of that line. In that case
+	 * the cursor needs to go onto a new line.
+	 */
+	if (current_cursor.row >= l->max_rows) {
+		minirl_state_refresh_required(l);
+		goto done;
+	}
+
 	struct buffer ab;
 
 	buffer_init(&ab, 20);
@@ -577,8 +588,18 @@ minirl_refresh_line(minirl_st * const minirl)
 	l->previous_cursor = current_cursor;
 	l->previous_line_end = line_end_cursor;
 
-	/* Update max_rows if needed. */
-	size_t const num_rows = line_end_cursor.row + 1;
+	/*
+	 * Update max_rows if needed. Note that the cursor may be beyond the
+	 * line end if the line fills the width of the terminal. In that case
+	 * the cursor needs to go onto the next line.
+	 */
+	size_t num_rows;
+
+	if (current_cursor.row > line_end_cursor.row) {
+		num_rows = current_cursor.row + 1;
+	} else {
+		num_rows = line_end_cursor.row + 1;
+	}
 
 	if (num_rows > l->max_rows) {
 		l->max_rows = num_rows;
@@ -1278,10 +1299,13 @@ static int minirl_edit(
 				return -1;
 			}
 
+			if (!l->flags.done
+			    && !l->flags.refresh_required
+			    && l->flags.cursor_refresh_required) {
+				minirl_refresh_cursor(minirl);
+			}
 			if (l->flags.refresh_required) {
 				minirl_refresh_line(minirl);
-			} else if (!l->flags.done && l->flags.cursor_refresh_required) {
-				minirl_refresh_cursor(minirl);
 			}
 
 			if (l->flags.done) {
