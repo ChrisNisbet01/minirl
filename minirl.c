@@ -393,17 +393,44 @@ emit_cursor_left(struct buffer * const ab, size_t const count)
 }
 
 static void
-emit_set_column(struct buffer * const ab, size_t const column_num)
+emit_row_adjustment(
+    struct buffer * const ab, int const desired_row, int const current_row)
 {
-	/*
-	 * '<ESC>[<#>G' doesn't always seem to work, so achieve this by moving
-	 * the cursor to the beginning of the line and then right by the desired
-	 * amount.
-	 */
-	buffer_append(ab, "\r", 1);
-	if (column_num > 1) {
-		emit_cursor_right(ab, column_num - 1);
+	if (desired_row < current_row) {
+		size_t const up_count = current_row - desired_row;
+
+		emit_cursor_up(ab, up_count);
+	} else if (desired_row > current_row) {
+		size_t const down_count = desired_row - current_row;
+
+		emit_cursor_down(ab, down_count);
 	}
+}
+
+static void
+emit_column_adjustment(
+    struct buffer * const ab, int const desired_col, int const current_col)
+{
+	if (desired_col < current_col) {
+		size_t const left_count = current_col - desired_col;
+
+		emit_cursor_left(ab, left_count);
+	} else if (desired_col > current_col) {
+		size_t const right_count = desired_col - current_col;
+
+		emit_cursor_right(ab, right_count);
+	}
+}
+
+static void
+emit_cursor_adjustment(
+    struct buffer * const ab,
+    cursor_st const * const desired,
+    cursor_st const * const current)
+{
+	emit_row_adjustment(ab, desired->row, current->row);
+	emit_column_adjustment(ab, desired->col, current->col);
+
 }
 
 static bool
@@ -445,24 +472,7 @@ minirl_refresh_cursor(minirl_st * const minirl)
 	buffer_init(&ab, 20);
 
 	/* Update the cursor position. */
-	if (current_cursor.row < l->previous_cursor.row) {
-		int const up_count = l->previous_cursor.row - current_cursor.row;
-
-		emit_cursor_up(&ab, up_count);
-	} else if (current_cursor.row > l->previous_cursor.row) {
-		int const down_count = current_cursor.row - l->previous_cursor.row;
-
-		emit_cursor_down(&ab, down_count);
-	}
-	if (current_cursor.col > l->previous_cursor.col) {
-		int const right_count = current_cursor.col - l->previous_cursor.col;
-
-		emit_cursor_right(&ab, right_count);
-	} else if (current_cursor.col < l->previous_cursor.col) {
-		int const left_count = l->previous_cursor.col - current_cursor.col;
-
-		emit_cursor_left(&ab, left_count);
-	}
+	emit_cursor_adjustment(&ab, &current_cursor, &l->previous_cursor);
 
 	l->previous_cursor = current_cursor;
 	l->flags.cursor_refresh_required = false;
@@ -552,19 +562,10 @@ minirl_refresh_line(minirl_st * const minirl)
 	}
 
 	/*
-	 * Move cursor to right position. At present it will be at the end of the
-	 * current line.
+	 * Move the cursor to edit position. At present it will be at the end of
+	 * the current line.
 	 */
-
-	/* Go up till we reach the expected positon. */
-	if (line_end_cursor.row > current_cursor.row) {
-		unsigned const up_count = line_end_cursor.row - current_cursor.row;
-
-		emit_cursor_up(&ab, up_count);
-	}
-
-	/* Set column. */
-	emit_set_column(&ab, current_cursor.col + 1);
+	emit_cursor_adjustment(&ab, &current_cursor, &line_end_cursor);
 
 	l->previous_cursor = current_cursor;
 	l->previous_line_end = line_end_cursor;
