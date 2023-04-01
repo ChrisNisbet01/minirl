@@ -1583,14 +1583,14 @@ minirl_text_insert(minirl_st * const minirl, char const * const text)
 	return minirl_text_len_insert(minirl, text, strlen(text));
 }
 
-void
-minirl_display_matches(minirl_st * const minirl, char ** const matches)
+static void
+minirl_display_matches(minirl_st * const minirl, char const * const * const matches)
 {
 	size_t max;
 
 	/* Find maximum completion length. */
 	max = 0;
-	for (char **m = matches; *m != NULL; m++) {
+	for (char const * const *m = matches; *m != NULL; m++) {
 		size_t const size = strlen(*m);
 
 		if (max < size) {
@@ -1603,7 +1603,7 @@ minirl_display_matches(minirl_st * const minirl, char ** const matches)
 
 	/* Print out a table of completions. */
 	fprintf(minirl->out.stream, "\r\n");
-	for (char **m = matches; *m != NULL;) {
+	for (char const * const *m = matches; *m != NULL;) {
 		for (size_t c = 0; c < num_cols && *m; c++, m++) {
 			fprintf(minirl->out.stream, "%-*s ", (int)max, *m);
 		}
@@ -1615,7 +1615,7 @@ bool
 minirl_complete(
 	minirl_st * const minirl,
 	unsigned const start,
-	char ** const matches,
+	char const * const * const matches,
 	bool const allow_prefix)
 {
 	bool did_some_completion;

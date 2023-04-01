@@ -65,12 +65,8 @@ minirl_terminal_width(minirl_st *minirl);
 bool minirl_complete(
 	minirl_st *minirl,
 	unsigned start,
-	char **matches,
+	char const * const *matches,
 	bool allow_prefix);
-
-/* Display the set of matches on the terminal. */
-void
-minirl_display_matches(minirl_st *minirl, char **matches);
 
 /* Bind a key handler to a key. */
 bool
