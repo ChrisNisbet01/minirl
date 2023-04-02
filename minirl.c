@@ -603,9 +603,9 @@ done:
 /*
  * Insert 'text' at the current cursor position.
  *
- * On error writing to the terminal -1 is returned, otherwise 0.
+ * If an error occurs writing to the terminal false is returned, otherwise true.
  */
-static int
+static bool
 minirl_edit_insert(
 	minirl_st * const minirl,
 	char const * const text,
@@ -617,7 +617,7 @@ minirl_edit_insert(
 	if (required_len >= l->line_buf->capacity) {
 		if (!buffer_grow(l->line_buf, required_len - l->line_buf->capacity)) {
 			minirl_state_had_error(l);
-			return -1;
+			return false;
 		}
 	}
 
@@ -641,7 +641,7 @@ minirl_edit_insert(
 
 		if (!internal_line_buffer_init(&internal, l, &minirl->options.echo)) {
 			minirl_state_had_error(l);
-			return -1;
+			return false;
 		}
 
 		calculate_cursor_position(l, &new_line_end, internal.end, &internal);
@@ -678,18 +678,18 @@ minirl_edit_insert(
 	} else if (!minirl->options.echo.disable) {
 		if (io_write(minirl->out.fd, text, len) == -1) {
 			minirl_state_had_error(l);
-			return -1;
+			return false;
 		}
 	} else if (minirl->options.echo.ch != '\0') {
 		if (io_write(minirl->out.fd,
 			     &minirl->options.echo.ch,
 			     sizeof minirl->options.echo.ch) == -1) {
 			minirl_state_had_error(l);
-			return -1;
+			return false;
 		}
 	}
 
-	return 0;
+	return true;
 }
 
 /*
@@ -1575,17 +1575,13 @@ minirl_text_len_insert(
 	char const * const text,
 	size_t const length)
 {
-	if (minirl_edit_insert(minirl, text, length) < 0) {
-		return false;
-	}
-
-	return true;
+	return minirl_edit_insert(minirl, text, length);
 }
 
 bool
 minirl_text_insert(minirl_st * const minirl, char const * const text)
 {
-	return minirl_text_len_insert(minirl, text, strlen(text));
+	return minirl_edit_insert(minirl, text, strlen(text));
 }
 
 static void
