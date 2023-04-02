@@ -64,8 +64,7 @@ internal_line_buffer_init(
 		internal->end = l->len;
 		internal->alloced_buffer = NULL;
 		internal->buffer = l->line_buf->b;
-	}
-	else if (echo->ch == '\0') {
+	} else if (echo->ch == '\0') {
 		internal->edit_point = 0;
 		internal->end = 0;
 		internal->alloced_buffer = NULL;
@@ -1823,3 +1822,4 @@ minirl_echo_disable(minirl_st * const minirl, char const echo_char)
 	minirl->options.echo.disable = true;
 	minirl->options.echo.ch = echo_char;
 }
+
