@@ -601,7 +601,7 @@ done:
 }
 
 /*
- * Insert the character 'c' at cursor current position.
+ * Insert 'text' at the current cursor position.
  *
  * On error writing to the terminal -1 is returned, otherwise 0.
  */
@@ -1050,7 +1050,8 @@ ctrl_d_handler(minirl_st * const minirl, char const *key, void * const user_ctx)
 {
 	/*
 	 * Delete the character to the right of the cursor if there is one,
-	 * else indicate EOF (i.e. results in an error and program typically exits).
+	 * else if the line is empty indicate an error (the program typically
+	 * exits).
 	 */
 	minirl_state_st * const l = &minirl->state;
 	bool result;
@@ -1499,10 +1500,12 @@ minirl_history_add(minirl_st * const minirl, char const * const line)
 	return 1;
 }
 
-/* Set the maximum length for the history. This function can be called even
+/*
+ * Set the maximum length for the history. This function can be called even
  * if there is already some history, the function will make sure to retain
  * just the latest 'len' elements if the new history length value is smaller
- * than the amount of items already inside the history. */
+ * than the amount of items already inside the history.
+ */
 int
 minirl_history_set_max_len(minirl_st * const minirl, size_t const len)
 {
@@ -1553,21 +1556,19 @@ minirl_text_delete(minirl_st * const minirl, size_t const start, size_t const en
 	memmove(&line[start], &line[start + delta], l->len + 1 - end);
 	l->len -= delta;
 
-	/* now adjust the indexes */
+	/* Now adjust the indexes */
 	if (l->pos > end) {
-		/* move the insertion point back appropriately */
+		/* Move the insertion point back appropriately */
 		l->pos -= delta;
 	} else if (l->pos > start) {
-		/* move the insertion point to the start */
+		/* Move the insertion point to the start */
 		l->pos = start;
 	}
 
 	minirl_state_refresh_required(l);
 }
 
-/*
- * Insert text into the line at the current cursor position.
- */
+/* Insert text into the line at the current cursor position. */
 bool
 minirl_text_len_insert(
 	minirl_st * const minirl,
