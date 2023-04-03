@@ -920,6 +920,14 @@ minirl_edit_done(minirl_st * const minirl)
 	if (minirl->state.flags.cursor_refresh_required) {
 		minirl_refresh_cursor(minirl);
 	}
+
+	/*
+	 * Finally, print a newline to shift the cursor (which is now at the end
+	 * of the line) to the next line.
+	 */
+	char const nl = '\n';
+	int const res = io_write(minirl->out.fd, &nl, sizeof nl);
+	(void)res;
 }
 
 static bool
@@ -1401,11 +1409,8 @@ minirl_readline(minirl_st * const minirl, char const * const prompt)
 		buffer_clear(&line_buf);
 	}
 
-	if (line == NULL || line[0] == '\0') {
-		/*
-		 * Without this, when empty lines (e.g. after CTRL-C) are returned,
-		 * the next prompt gets written out on the same line as the previous.
-		 */
+	if (line == NULL) {
+		/* Some kind of error occurred, or CTRL-D pressed. */
 		char const nl = '\n';
 		int const res = io_write(minirl->out.fd, &nl, sizeof nl);
 		(void)res;
